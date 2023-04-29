@@ -1,0 +1,22 @@
+version: '3'
+services:
+  RStudio:
+    image: hkrkizum/r-tidymodels:20230429
+    ports:
+      - "8787:8787"
+    environment:
+      - PASSWORD=root
+      - DISPLAY=10.0.75.1:0.0
+      - DISABLE_AUTH=TRUE    
+    volumes:
+      - ./data/:/home/rstudio/data/
+      - /home/hikaru/.cache_docker_volume/renv/:/home/rstudio/.cache/
+      - ./Setting_Rstudio/:/home/rstudio/.config/rstudio/
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -1,0 +1,21 @@
+{
+    "restore_source_documents": false,
+    "load_workspace": false,
+    "initial_working_directory": "~",
+    "always_save_history": false,
+    "restore_last_project": false,
+    "insert_native_pipe_operator": true,
+    "auto_save_on_blur": true,
+    "code_completion_characters": 2,
+    "code_completion_delay": 100,
+    "line_ending_conversion": "posix",
+    "default_encoding": "UTF-8",
+    "editor_theme": "Monokai",
+    "doc_outline_show": "all",
+    "knit_working_dir": "project",
+    "posix_terminal_shell": "bash",
+    "python_type": "system",
+    "python_version": "3.10.6",
+    "python_path": "/usr/local/bin/python",
+    "python_project_environment_automatic_activate": false
+}
