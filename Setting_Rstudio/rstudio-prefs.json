@@ -17,5 +17,6 @@
     "python_type": "system",
     "python_version": "3.10.6",
     "python_path": "/usr/local/bin/python",
-    "python_project_environment_automatic_activate": false
+    "python_project_environment_automatic_activate": false,
+    "jobs_tab_visibility": "shown"
 }
