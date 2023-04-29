@@ -1,0 +1,90 @@
+---
+title: "EDA"
+format: 
+  html:
+    toc: true
+    toc-depth: 5
+    number-sections: true
+execute: 
+    fig-width: 9
+---
+
+## Import target
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(targets)
+library(patchwork)
+tar_load_globals()
+
+tar_load_everything()
+```
+
+## Chech data
+
+### train
+
+```{r}
+df_train |> glimpse()
+
+df_train |> skimr::skim()
+```
+
+### test
+
+```{r}
+df_test |> glimpse()
+
+df_test |> skimr::skim()
+```
+
+## EDA
+
+### 時系列の把握
+
+```{r}
+g_EDA_1_trend
+g_EDA_1_trend_group
+```
+
+### 変数間の相関
+
+```{r}
+g_corr_matrix
+```
+
+### 目的変数の分布
+
+```{r}
+g_hist_target + g_hist_target_log10
+```
+
+
+### 各変数のヒストグラム
+
+```{r}
+#| output: asis
+
+for(i in 1:length(param_colnames)){
+  cat(str_c("#### ", param_colnames[i], "\n"))
+  plot( g_hist_all[[i]] /( g_corr_all[[i]] + g_corr_all_log10[[i]] ) )
+}
+```
+
+### 対数変換後のヒストグラム
+
+```{r}
+#| output: asis
+
+for(i in 1:length(param_colnames)){
+  cat(str_c("#### ", param_colnames[i], "\n"))
+  plot( g_hist_all_mod[[i]] /( g_corr_all_mod[[i]] + g_corr_all_log10_mod[[i]] ) )
+}
+
+```
+
+### 変数間の相関
+
+```{r}
+g_corr_matrix_mod
+```
+

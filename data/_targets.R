@@ -101,6 +101,24 @@ make_gg_single_Continuous_input_vec <- function(df, vec){
       param_val = !!as.name(.x)))
 }
 
+make_gg_hist_single_Continuous <- function(df, param_var){
+  df |> 
+    ggplot(aes(x = !!as.name(param_var), colour = dataset)) +
+    geom_histogram(aes(y=after_stat(density), fill = dataset), 
+                   position = "identity", alpha = 0.4, colour = NA) +
+    geom_density(linewidth = 1) +
+    scale_colour_manual(values = c("red", "blue")) +
+    scale_fill_manual(values = c("red", "blue")) +
+    theme_bw()
+}
+
+make_gg_corr_single_Continuous <- function(df, param_var){
+  df |> 
+    ggplot(aes(x = !!as.name(param_var), y = POWER)) +
+    geom_point(colour = "blue", alpha = 0.4, shape = 20, size = 2) +
+    theme_bw()
+}
+
 make_finalized_wkflow_set <- function(wkflow_set){
   wkflow_set |> 
     dplyr::mutate(best_params = map(.x = wflow_id,
@@ -160,7 +178,264 @@ list(
     command = {
       data.table::fread(in_f_submitt)
     }
-  )
-)
-
+  ),
   
+  ## 3. EDA -----------------------------------------
+  ### 1. 時系列に変換 -----------------------
+  tar_target(
+    name = df_train_time,
+    command = {
+      df_train |> 
+        dplyr::mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::arrange(DATE)
+    }
+  ),
+  tar_target(
+    name = df_test_time,
+    command = {
+      df_test |> 
+        dplyr::mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::arrange(DATE)
+    }
+  ),
+  
+  ### 2. 時系列トレンドの把握 -----------------------
+  tar_target(
+    name = g_EDA_1_trend,
+    command = {
+      df_train_time |> 
+        ggplot(aes(x = DATE, y = POWER)) +
+        geom_line() +
+        theme_bw()
+    }
+  ),
+  tar_target(
+    name = g_EDA_1_trend_group,
+    command = {
+      df_train_time |> 
+        ggplot(aes(x = DATE, y = POWER, group = SOT)) +
+        geom_line(alpha = 0.3, colour = "gray50") +
+        geom_line(
+          data = df_train_time |> 
+            dplyr::group_by(DATE) |> 
+            dplyr::summarise(median = median(POWER)),
+          aes(x = DATE, y = median), inherit.aes = FALSE,
+          colour = "blue"
+        ) +
+        geom_line(
+          data = df_train_time |> 
+            dplyr::group_by(DATE) |> 
+            dplyr::summarise(mean = mean(POWER)),
+          aes(x = DATE, y = mean), inherit.aes = FALSE,
+          colour = "red"
+        ) +
+        theme_bw()
+    }
+  ),
+  
+  ### 3. 変数の把握 --------------------------------------
+  #### 1. データセット作成 --------
+  tar_target(
+    name = df_EDA,
+    command = {
+      dplyr::bind_rows(df_train_time |> dplyr::mutate(dataset = "train"),
+                       df_test_time  |> dplyr::mutate(dataset = "test")) |> 
+        dplyr::mutate(dataset = fct_relevel(dataset, "train")) 
+    }
+  ),
+  
+  #### 2. 相関行列 --------
+  tar_target(
+    name = g_corr_matrix,
+    command = {
+      res_cor <- 
+        df_EDA |> 
+        dplyr::select(-ID, -dataset) |> 
+        dplyr::relocate(POWER) |> 
+        correlation::correlation(redundant = TRUE,
+                                 p_adjust = "bonferroni")
+      
+      res_cor_summary <- summary(res_cor, redundant = TRUE)
+      
+      g <- plot(res_cor_summary)
+      g$layers[[2]] <- NULL
+      g + geom_text(aes(x = Parameter1, y = Parameter2, label = Text), size = 2)
+    }
+  ),
+  #### 3. ヒストグラム ------------
+  tar_target(
+    name = g_hist_target,
+    command = {
+      df_train_time |> 
+        ggplot(aes(x = POWER)) +
+        geom_histogram(aes(y=after_stat(density)), 
+                       position = "identity", alpha = 0.4, colour = NA) +
+        geom_density(linewidth = 1) +
+        theme_bw()
+    }
+  ),
+  tar_target(
+    name = g_hist_target_log10,
+    command = {
+      g_hist_target +
+        scale_x_continuous(trans = scales::log10_trans())
+    }
+  ),
+  
+  tar_target(
+    name = param_colnames,
+    command = {
+      df_EDA |> 
+        dplyr::select(-c("ID", "DATE", "dataset", "POWER", "SOT")) |> 
+        colnames()
+    }
+  ),
+  tar_target(
+    name = g_hist_all,
+    command = {
+      param_colnames |> 
+        purrr::map(.f = make_gg_hist_single_Continuous, df = df_EDA, .progress = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = g_corr_all,
+    command = {
+      param_colnames |> 
+        purrr::map(.f = make_gg_corr_single_Continuous, df = df_train_time, .progress = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = g_corr_all_log10,
+    command = {
+      g_corr_all |> 
+        purrr::map(.f = function(x){
+          x + scale_y_continuous(trans = scales::log10_trans())
+      })
+    }
+  ),
+  
+  ### 4. 変換 --------------------
+  tar_target(
+    name = df_EDA_mod,
+    command = {
+      df_EDA |> 
+        dplyr::mutate(across(.cols = c(V_1,
+                                       V_6,
+                                       # V_8,
+                                       V_9,
+                                       V_11,
+                                       V_12,
+        ),
+        .fns = ~log10(.x+0.1))) |> 
+        dplyr::mutate(V_8 = (\(x) {
+          res <- bestNormalize::yeojohnson(x = x)
+          return(res$x.t)
+        })(V_8)) |>  
+        
+        dplyr::mutate(V_5 = if_else(V_5 < 0, NA_real_, V_5)) |> 
+        dplyr::mutate(V_5 = if_else(is.na(V_5), median(V_5, rm.na = TRUE), V_5)) 
+    }
+  ),
+  
+  tar_target(
+    name = g_hist_all_mod,
+    command = {
+      param_colnames |> 
+        purrr::map(.f = make_gg_hist_single_Continuous, df = df_EDA_mod, .progress = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = g_corr_all_mod,
+    command = {
+      df_mod <- 
+        df_train_time |> 
+        dplyr::mutate(across(.cols = c(V_1,
+                                       V_6,
+                                       # V_8,
+                                       V_9,
+                                       V_11,
+                                       V_12,
+        ),
+        .fns = ~log10(.x+0.1))) |> 
+        dplyr::mutate(V_8 = (\(x) {
+          res <- bestNormalize::yeojohnson(x = x)
+          return(res$x.t)
+        })(V_8)) |>  
+        
+        dplyr::mutate(V_5 = if_else(V_5 < 0, NA_real_, V_5)) |> 
+        dplyr::mutate(V_5 = if_else(is.na(V_5), median(V_5, rm.na = TRUE), V_5))
+      
+      param_colnames |> 
+        purrr::map(.f = make_gg_corr_single_Continuous, df = df_mod, .progress = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = g_corr_all_log10_mod,
+    command = {
+      g_corr_all |> 
+        purrr::map(.f = function(x){
+          x + scale_y_continuous(trans = scales::log10_trans())
+        })
+    }
+  ),
+  tar_target(
+    name = g_corr_matrix_mod,
+    command = {
+      res_cor <- 
+        df_EDA_mod |> 
+        dplyr::select(-ID, -dataset) |> 
+        dplyr::relocate(POWER) |> 
+        correlation::correlation(redundant = TRUE,
+                                 p_adjust = "bonferroni")
+      
+      res_cor_summary <- summary(res_cor, redundant = TRUE)
+      
+      g <- plot(res_cor_summary)
+      g$layers[[2]] <- NULL
+      g + geom_text(aes(x = Parameter1, y = Parameter2, label = Text), size = 2)
+    }
+  ),
+  
+  ## 4. モデル作成 ----------------
+  ### 1. split -------------
+  tar_target(
+    name = df_split,
+    command = {
+      df_train |> 
+        rsample::initial_split(prop = 3/4, strata = POWER)
+    }
+  ),
+  tar_target(
+    name = df_model_train,
+    command = {
+      df_split |> 
+        rsample::training()
+    }
+  ),
+  tar_target(
+    name = df_model_test,
+    command = {
+      df_split |> 
+        rsample::testing()
+    }
+  ),
+  tar_target(
+    name = df_kvf,
+    command = {
+      df_model_train |> 
+        rsample::vfold_cv(v = 10, strata = POWER)
+    }
+  ),
+  
+  ### 2. recipe --------------
+  tar_target(
+    name = 
+  )
+  
+  
+  
+)
