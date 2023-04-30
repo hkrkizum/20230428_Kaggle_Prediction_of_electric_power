@@ -88,19 +88,9 @@ for(i in 1:length(param_colnames)){
 g_corr_matrix_mod
 ```
 
-## モデル構築
-
-### ベース
-
-#### レシピ
+## 地図上での分布
 
 ```{r}
-rec_base
-```
-
-#### モデル
-
-```{r}
-
+g_EDA_map
 ```
 

@@ -35,7 +35,12 @@ tar_option_set(
 
                "correlation",
                "see",
-               "bestNormalize"),
+               
+               "bestNormalize",
+               
+               "rnaturalearth",
+               "rnaturalearthdata",
+               "rgeos"),
   format = "qs",
   seed = 54147
 )
@@ -417,6 +422,25 @@ list(
       g <- plot(res_cor_summary)
       g$layers[[2]] <- NULL
       g + geom_text(aes(x = Parameter1, y = Parameter2, label = Text), size = 2)
+    }
+  ),
+  ### 5. 地図 -------------------------------------
+  tar_target(
+    name = g_EDA_map,
+    command = {
+      world_map <- rnaturalearth::ne_countries(scale = "large",
+                                               returnclass = "sf")
+      world_map |> 
+        filter(name  == "China") %>% # 「東アジア」に絞る  
+        ggplot() +
+        geom_sf() +
+        geom_point(data = df_EDA |> 
+                     dplyr::filter(!is.na(POWER)) |> 
+                     dplyr::group_by(SOT, LAT, LON) |> 
+                     dplyr::summarise(mean = mean(POWER)),
+                   aes(x = LON, y = LAT, colour = mean)) +
+        scale_color_gradient(low = "blue", high = "red") +
+        theme_bw()
     }
   ),
   

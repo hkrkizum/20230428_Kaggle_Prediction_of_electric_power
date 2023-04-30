@@ -29,8 +29,8 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(rgeos)
 
-world_map <- ne_countries(scale = "large",
-                          returnclass = "sf")
+world_map <- rnaturalearth::ne_countries(scale = "large",
+                                         returnclass = "sf")
 
 world_map |> 
   ggplot() +
@@ -41,9 +41,16 @@ world_map |>
   filter(name  == "China") %>% # 「東アジア」に絞る  
   ggplot() +
   geom_sf() +
-  geom_point(data = tmp,
-             aes(x = LON, y = LAT)) +
-  theme_bw() 
+  geom_point(data = df_EDA |> 
+               dplyr::filter(!is.na(POWER)) |> 
+               dplyr::group_by(SOT, LAT, LON) |> 
+               dplyr::summarise(mean = mean(POWER)),
+             aes(x = LON, y = LAT, colour = mean)) +
+  scale_color_gradient(low = "blue", high = "red") +
+  theme_bw()
+  
+
+
 
 
 world_map |> 

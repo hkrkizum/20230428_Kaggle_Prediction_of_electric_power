@@ -49,6 +49,8 @@ RUN virtualenv tidymodels
 USER root
 WORKDIR /home/rstudio/  
 
-RUN apt install libglpk-dev -y
+RUN apt install -y \
+    libglpk-dev \
+    libudunits2-dev libgdal-dev libgeos-dev libproj-dev
 
 CMD ["/init"]
