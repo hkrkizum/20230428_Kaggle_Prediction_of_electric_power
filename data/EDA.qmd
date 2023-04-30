@@ -88,3 +88,19 @@ for(i in 1:length(param_colnames)){
 g_corr_matrix_mod
 ```
 
+## モデル構築
+
+### ベース
+
+#### レシピ
+
+```{r}
+rec_base
+```
+
+#### モデル
+
+```{r}
+
+```
+

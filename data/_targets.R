@@ -1,9 +1,9 @@
 # 0. load package -------------------------
 library(targets)
 
-
 # 1. set optins --------------------------------------------------------------
 options(tidyverse.quiet = TRUE)
+
 tar_option_set(
   packages = c("tidyverse",
                "forcats",
@@ -27,13 +27,22 @@ tar_option_set(
                "lightgbm",
                "bonsai",
                
-               "keras",
+               # "reticulate",
+               # "keras",
+               
+               "torch",
+               # ""
 
                "correlation",
-               "see"),
+               "see",
+               "bestNormalize"),
   format = "qs",
   seed = 54147
 )
+
+use_python(python = "/home/rstudio/.virtualenvs/tidymodels/bin/python")
+use_virtualenv("tidymodels")
+
 
 # 2. set functions ----------------------------------------------------------
 convert_df_num_to_factor <- function(df, param_col_to_factor){
@@ -133,6 +142,17 @@ make_finalized_wkflow_set <- function(wkflow_set){
                                                  workflowsets::extract_workflow(id = param_id) |> 
                                                  finalize_workflow(parameters = params)
                                              }))
+}
+
+make_fit_wkflow_set <- function(wkflow_set, df_split){
+  wkflow_set |> 
+    dplyr::mutate(best_params = map(.x = wflow_id,
+                                    .f =  function(param_id){
+                                      wkflow_set |> 
+                                        workflowsets::extract_workflow(id = param_id) |> 
+                                        last_fit(df_split,
+                                                 metrics = yardstick::metric_set(rmse, mae, mpe))
+                                    })) 
 }
 
 # 3. define pipeline --------------------------------------------------------
@@ -433,9 +453,86 @@ list(
   
   ### 2. recipe --------------
   tar_target(
-    name = 
+    name = rec_base,
+    command = {
+      df_model_train |> 
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        recipes::step_integer(DATE_month, DATE_dow) |> 
+        recipes::step_select(-SOT)
+    }
+  ),
+  
+  
+  ### 3. model ----------------
+  tar_target(
+    name = spec_xgb_base,
+    command = {
+      boost_tree() |> 
+        set_mode("regression") |> 
+        set_engine("xgboost")
+      
+    }
+  ),
+  tar_target(
+    name = spec_lightgbm_base,
+    command = {
+      boost_tree() |> 
+        set_mode("regression") |> 
+        set_engine("lightgbm")
+      
+    }
+  ),
+  tar_target(
+    name = spec_lm_base,
+    command = {
+      linear_reg() |> 
+        set_mode("regression") |> 
+        set_engine("lm")
+      
+    }
+  ),
+  tar_target(
+    name = spec_keras_base,
+    command = {
+      linear_reg() |> 
+        set_mode("regression") |> 
+        set_engine("keras") 
+      
+    }
+  ),
+  
+  ### 4. workflow --------------
+  tar_target(
+    name = wkf_set_base,
+    command = {
+      workflowsets::workflow_set(
+        preproc = list(base = rec_base), 
+        models = list(xgb      = spec_xgb_base,
+                      lightgbm = spec_lightgbm_base,
+                      lm       = spec_lm_base,
+                      nn       = spec_keras_base)
+      ) 
+    }
+  ),
+  
+  
+  ### 5. fit -------------------
+  tar_target(
+    name = wkf_set_base_fit,
+    command = {
+      wkf_set_base |> 
+        last_fit(split = df_split, metrics = yardstick::metric_set(rmse, mae, mape, mpe))
+    }
+  ),
+  
+  ### 6. metrics --------------
+  tar_target(
+    name = wkf_base_metric,
+    command = {
+      wkf_base_fit |> collect_metrics()
+    }
   )
-  
-  
-  
 )

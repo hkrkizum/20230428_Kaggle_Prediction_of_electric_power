@@ -226,3 +226,94 @@ df_EDA |>
     data = df_EDA |> dplyr::filter(dataset == "test"),
     aes(x = DATE, y = 120), size = 1
   )
+
+
+examples <- data.frame(
+  times = ymd_hms("2022-05-06 23:51:07") +
+    hours(1:5) + minutes(1:5) + seconds(1:5)
+)
+time_rec <- recipe(~ times, examples) %>%
+  step_time(all_predictors(), keep_original_cols = FALSE)
+
+time_rec
+tidy(time_rec, number = 1)
+
+
+time_rec <- prep(time_rec, training = examples)
+
+time_values <- bake(time_rec, new_data = examples)
+time_values
+
+rec_base |> 
+  prep() |> bake(new_data = NULL) |> glimpse()
+
+
+
+df_model_train |> 
+  recipes::recipe(POWER ~ .) |> 
+  recipes::update_role(ID, new_role = "id variable") |> 
+  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+  recipes::step_integer(DATE_month, DATE_dow) |> 
+  recipes::step_select(-SOT, ) |>
+  prep() |> bake(new_data = df_model_test)
+
+
+
+
+wkf_base_fit |> predict(new_data = df_model_test)
+
+
+
+wkf_base_fit <- 
+  wkf_base |> 
+  fit(data = df_model_train)
+
+wkf_base_fit
+
+rec_base |> 
+  prep() |> 
+  bake(new_data = df_model_test) |> 
+  predict()
+
+
+pred <- bind_cols(df_model_test,
+                  wkf_base_fit |>  predict(df_model_test))
+
+pred
+
+
+df_model_test |> 
+  dplyr::mutate(estimate = predict(wkf_base_fit, ))
+predict(wkf_base_fit, 
+        new_data = df_model_test)
+
+rmse(data = pred,
+     truth = POWER, 
+     estimate = .pred)
+
+wkf_set_base <- 
+  workflowsets::workflow_set(
+  preproc = list(base = rec_base), 
+  models = list(xgb      = spec_xgb_base,
+                lightgbm = spec_lightgbm_base,
+                lm       = spec_lm_base,
+                nn       = spec_keras_base)
+  )
+
+wkf_set_base |> 
+  dplyr::mutate(wkf = map(wflow_id, .f = function(x){
+    wkf_set_base |> 
+      extract_workflow(id = x)
+  })) |> 
+  dplyr::mutate()
+
+library(reticulate)
+reticulate::virtualenv_list()
+use_python(python = "/home/rstudio/.virtualenvs/tidymodels/bin/python")
+use_virtualenv("tidymodels")
+
+library(tensorflow)
+tf$constant("Hello Tensorflow!")
+
+res <- make_fit_wkflow_set(wkflow_set = wkf_set_base, df_split = df_split)
