@@ -14,6 +14,8 @@ execute:
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(targets)
 library(patchwork)
+library(gt)
+
 tar_load_globals()
 
 tar_load_everything()
@@ -109,28 +111,62 @@ wkf_tabnet_base_v2 |>
 ### メトリクス
 
 ```{r}
-wkf_set_base_fit_metric$metrics |> 
-  tibble() |> 
-  dplyr::mutate(wflow_id = wkf_set_base_fit_metric$wflow_id) |> 
-  dplyr::select(wflow_id, .metric, .estimate) 
+dplyr::bind_rows(
+  wkf_set_base_fit_metric$metrics |> 
+    tibble() |> 
+    dplyr::mutate(wflow_id = wkf_set_base_fit_metric$wflow_id) |> 
+    dplyr::select(wflow_id, .metric, .estimate),
+  
+  wkf_tabnet_base_metric |> 
+    dplyr::mutate(wflow_id = "base_tabnet") |> 
+    dplyr::filter(.metric == "rmse") |> 
+    dplyr::select(wflow_id, .metric, .estimate),
+  
+  wkf_set_base_v2_fit_metric$metrics |> 
+    tibble() |> 
+    dplyr::mutate(wflow_id = wkf_set_base_v2_fit_metric$wflow_id) |> 
+    dplyr::select(wflow_id, .metric, .estimate) |> 
+    dplyr::mutate(wflow_id = str_replace_all(wflow_id, "base_", "base_v2_")),
+  
+  wkf_tabnet_base_v2_metric |> 
+    dplyr::mutate(wflow_id = "base_v2_tabnet") |> 
+    dplyr::filter(.metric == "rmse") |> 
+    dplyr::select(wflow_id, .metric, .estimate) 
+) |> 
+  gt::gt()
+  
+```
+
+### 残差の分布
+
+-   性能の良いlightGBDで視覚化する
+
+```{r}
+base_lightgbd_prediction |> 
+  dplyr::mutate(residual = .pred - POWER) |> 
+  ggplot(aes(sample = residual)) +
+  stat_qq_line(color="Red") +
+  geom_qq() +
+  theme_bw()
 
 
-wkf_set_base_v2_fit_metric$metrics |> 
-  tibble() |> 
-  dplyr::mutate(wflow_id = wkf_set_base_v2_fit_metric$wflow_id) |> 
-  dplyr::select(wflow_id, .metric, .estimate) |> 
-  dplyr::mutate(wflow_id = str_replace_all(wflow_id, "base_", "base_v2_"))
+base_lightgbd_prediction |> 
+  dplyr::mutate(residual = .pred - POWER) |> 
+  ggplot(aes(x = POWER, y = residual)) +
+  geom_point() +
+  theme_bw()
+```
 
+### トレンドとの比較
 
-wkf_tabnet_base_metric |> 
-  dplyr::mutate(wflow_id = "base_tabnet") |> 
-  dplyr::filter(.metric == "rmse") |> 
-  dplyr::select(wflow_id, .metric, .estimate) 
-
-
-wkf_tabnet_base_v2_metric |> 
-  dplyr::mutate(wflow_id = "base_v2_tabnet") |> 
-  dplyr::filter(.metric == "rmse") |> 
-  dplyr::select(wflow_id, .metric, .estimate) 
+```{r}
+base_lightgbd_prediction |> 
+  dplyr::select(-POWER) |> 
+  dplyr::bind_cols(df_model_test) |> 
+  dplyr::mutate(DATE = ymd(DATE)) |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_line() +
+  geom_line(aes(x = DATE, y = .pred), colour = "red") +
+  theme_bw()
 ```
 

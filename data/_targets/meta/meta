@@ -1,5 +1,6 @@
 name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
-.Random.seed|object|fb57269526cca21b|||||||||||||||
+.Random.seed|object|e1279df91e96f8f0|||||||||||||||
+base_lightgbd_prediction|stem|ad78e41a23980323|8723796c7769e520|102f82b1333dfba2|-1377699886||t19477.4859294509s|bc75b1ad8480b35f|34151|qs|local|vector|||0.001||
 convert_df_num_to_factor|function|35bdda075bd835b8|||||||||||||||
 df_EDA|stem|960c0a9cfa5d4818|7e7dd63c68168d46|86311a88815fc40e|-912148387||t19476.4453545372s|ac93c513cc7f5f1e|1280306|qs|local|vector|||0.015||
 df_EDA_mod|stem|6b29d58330edabad|e9b9079b69733a0c|b38f091acf754203|-106632101||t19476.4998580242s|e43949afe52daac3|1361487|qs|local|vector|||0.06||

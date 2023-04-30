@@ -661,5 +661,13 @@ list(
       wkf_tabnet_base_v2 |> 
         collect_metrics()
     }
+  ),
+  
+  ## 5. モデル改善 -----------------
+  tar_target(
+   name = base_lightgbd_prediction,
+   command = {
+     wkf_set_base_fit$best_params[[2]]$.predictions[[1]]
+   }
   )
 )

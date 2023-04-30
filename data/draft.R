@@ -379,4 +379,36 @@ wkf_set_base_v2_fit_metric$metrics |>
 
 wkf_tabnet_base_metric |> 
   dplyr::mutate(wflow_id = "base_tabnet") |> 
-  dplyr::filter(.metric == "")
+  dplyr::filter(.metric == "rmse") |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+
+
+wkf_tabnet_base_v2_metric |> 
+  dplyr::mutate(wflow_id = "base_v2_tabnet") |> 
+  dplyr::filter(.metric == "rmse") |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+
+
+
+
+base_lightgbm
+
+
+base_lightgbd_prediction |> 
+  dplyr::mutate(residual = .pred - POWER) |> 
+  ggplot(aes(sample = residual)) +
+  geom_qq() +
+  theme_bw()
+
+
+base_lightgbd_prediction |> 
+  dplyr::select(-POWER) |> 
+  dplyr::bind_cols(df_model_test) |> 
+  dplyr::mutate(DATE = ymd(DATE)) |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_line() +
+  geom_line(aes(x = DATE, y = .pred), colour = "red") +
+  theme_bw()
+
+
+
