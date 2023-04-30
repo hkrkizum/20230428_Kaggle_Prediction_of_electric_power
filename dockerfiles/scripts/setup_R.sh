@@ -67,7 +67,7 @@ if [ ! -x "$(command -v r)" ]; then
 
     # Clean up
     # shellcheck disable=SC2086
-    apt-get remove --purge -y ${BUILDDEPS}
+    # apt-get remove --purge -y ${BUILDDEPS}
     apt-get autoremove -y
     apt-get autoclean -y
 fi
@@ -84,7 +84,7 @@ else
 fi
 
 # Clean up
-rm -rf /var/lib/apt/lists/*
+# rm -rf /var/lib/apt/lists/*
 
 # Check the R info
 echo -e "Check the littler info...\n"

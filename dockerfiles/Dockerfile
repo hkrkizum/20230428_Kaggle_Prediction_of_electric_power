@@ -1,10 +1,9 @@
 # Base image
-FROM nvidia/cuda:11.7.1-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.7.1-cudnn8-devel-ubuntu22.04
 
 # Update apt ---------------------------------------
 ARG DEBIAN_FRONTEND=noninteractive
-RUN sed -i 's@archive.ubuntu.com@jp.archive.ubuntu.com@g' /etc/apt/sources.list
-RUN apt update && apt upgrade -y
+RUN apt update
 
 # Setup R ---------------------------------------
 LABEL org.opencontainers.image.licenses="GPL-2.0-or-later" \
@@ -37,5 +36,19 @@ RUN /rocker_scripts/install_pandoc.sh
 RUN /rocker_scripts/install_quarto.sh
 
 EXPOSE 8787
+
+# Setup python ----------------------------------
+RUN apt update && apt install python3-pip -y
+RUN pip install virtualenv
+
+USER rstudio 
+RUN mkdir -p /home/rstudio/.virtualenvs/
+WORKDIR /home/rstudio/.virtualenvs/
+RUN virtualenv tidymodels
+
+USER root
+WORKDIR /home/rstudio/  
+
+RUN apt install libglpk-dev -y
 
 CMD ["/init"]

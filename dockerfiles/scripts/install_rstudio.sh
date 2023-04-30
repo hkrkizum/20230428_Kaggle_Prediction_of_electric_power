@@ -128,7 +128,7 @@ cp /rocker_scripts/init_userconf.sh /etc/cont-init.d/02_userconf
 cp /rocker_scripts/pam-helper.sh /usr/lib/rstudio-server/bin/pam-helper
 
 # Clean up
-rm -rf /var/lib/apt/lists/*
+# rm -rf /var/lib/apt/lists/*
 
 # Check the RStudio Server
 echo -e "Check the RStudio Server version...\n"

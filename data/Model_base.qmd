@@ -1,0 +1,55 @@
+---
+title: "Base Model"
+format: 
+  html:
+    toc: true
+    toc-depth: 5
+    number-sections: true
+execute: 
+    fig-width: 9
+---
+
+## Import target
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(targets)
+library(patchwork)
+tar_load_globals()
+
+tar_load_everything()
+```
+
+## ベースモデル
+
+### Preprocessing
+
+#### 対数変換、正規化なし
+
+```{r}
+rec_base
+```
+
+#### 対数変換、正規化あり
+
+```{r}
+rec_base_v2_scaling
+```
+
+### モデル
+
+#### Workflowsetで管理
+
+```{r}
+spec_xgb_base
+spec_lightgbm_base
+spec_lm_base
+spec_keras_base
+```
+
+#### 個別管理
+
+```{r}
+wkf_tabnet_base |> 
+  extract_fit_parsnip()
+```
+

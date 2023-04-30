@@ -1,7 +1,7 @@
 version: '3'
 services:
   RStudio:
-    image: hkrkizum/r-tidymodels:20230429
+    image: hkrkizum/r-tidymodels:20230430-cuda-11.7.1-cudnn8-snapshot
     ports:
       - "8787:8787"
     environment:
@@ -11,6 +11,7 @@ services:
     volumes:
       - ./data/:/home/rstudio/data/
       - /home/hikaru/.cache_docker_volume/renv/:/home/rstudio/.cache/
+      - virtualenvs:/home/rstudio/.virtualenvs/
       - ./Setting_Rstudio/:/home/rstudio/.config/rstudio/
     restart: always
     deploy:
@@ -20,3 +21,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+volumes:
+  virtualenvs:  

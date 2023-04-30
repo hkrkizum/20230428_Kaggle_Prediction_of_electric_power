@@ -157,10 +157,10 @@ rm -rf "R.tar.gz"
 cp /usr/bin/checkbashisms /usr/local/bin/checkbashisms
 
 # shellcheck disable=SC2086
-apt-get remove --purge -y ${BUILDDEPS}
+# apt-get remove --purge -y ${BUILDDEPS}
 apt-get autoremove -y
 apt-get autoclean -y
-rm -rf /var/lib/apt/lists/*
+# rm -rf /var/lib/apt/lists/*
 
 # Check the R info
 echo -e "Check the R info...\n"

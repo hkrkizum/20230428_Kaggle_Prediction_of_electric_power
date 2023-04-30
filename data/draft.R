@@ -317,3 +317,49 @@ library(tensorflow)
 tf$constant("Hello Tensorflow!")
 
 res <- make_fit_wkflow_set(wkflow_set = wkf_set_base, df_split = df_split)
+
+wkf_set_base_fit |> 
+  dplyr::mutate(metrics = map(best_params, function(obj){
+    collect_metrics(obj)
+  })) |> 
+  tidyr::unnest_longer(metrics) |> 
+  dplyr::filter(metrics$.metric == "rmse")
+
+wkf_set_base_fit_metric
+
+tmp <- wkf_set_base_fit_metric$best_params[[1]]$.workflow
+
+tmp |> str()
+
+res <- 
+  wkf_set_base |> 
+  extract_workflow(id = "base_xgb") |> 
+  last_fit(df_split)
+
+
+tmp <- 
+  wkf_set_base_fit_metric |> 
+  dplyr::mutate(plot_res = pmap(.l = list(best_params, wflow_id), function(obj, id){
+    obj$.predictions[[1]] |> 
+      ggplot(aes(x = POWER, y = .pred)) +
+      geom_point() +
+      ggtitle(id)
+  }))
+
+tmp$plot_res
+
+tmp$plot_res[[1]]$.predictions
+
+tmp <- 
+  workflow() |> 
+  add_recipe(recipe = rec_base_v2_scaling) |> 
+  add_model(
+    tabnet(
+      epochs = 50,
+      batch_size = 128) |> 
+      set_engine("torch", verbose = TRUE) |> 
+      set_mode("regression") 
+  ) |> 
+  last_fit(df_split)
+
+tmp

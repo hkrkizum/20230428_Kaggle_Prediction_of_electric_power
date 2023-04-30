@@ -27,11 +27,11 @@ tar_option_set(
                "lightgbm",
                "bonsai",
                
-               # "reticulate",
-               # "keras",
+               "reticulate",
+               "keras",
                
                "torch",
-               # ""
+               "tabnet",
 
                "correlation",
                "see",
@@ -40,8 +40,8 @@ tar_option_set(
   seed = 54147
 )
 
-use_python(python = "/home/rstudio/.virtualenvs/tidymodels/bin/python")
-use_virtualenv("tidymodels")
+reticulate::use_python(python = "/home/rstudio/.virtualenvs/tidymodels/bin/python")
+reticulate::use_virtualenv("tidymodels")
 
 
 # 2. set functions ----------------------------------------------------------
@@ -465,6 +465,24 @@ list(
     }
   ),
   
+  tar_target(
+    name = rec_base_v2_scaling,
+    command = {
+      df_model_train |> 
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::step_select(-SOT) |> 
+        
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        
+        recipes::step_scale(all_numeric_predictors()) |>
+        
+        recipes::step_integer(DATE_month, DATE_dow) 
+        
+    }
+  ),  
+  
   
   ### 3. model ----------------
   tar_target(
@@ -494,13 +512,27 @@ list(
       
     }
   ),
+  
   tar_target(
     name = spec_keras_base,
     command = {
-      linear_reg() |> 
+      mlp(
+        epochs = 100,
+        activation = "relu",
+        ) |> 
         set_mode("regression") |> 
         set_engine("keras") 
-      
+    }
+  ),
+  
+  tar_target(
+    name = spec_tabnet_base,
+    command = {
+      tabnet(
+        epochs = 50,
+        batch_size = 128) |> 
+        set_engine("torch", verbose = TRUE) |> 
+        set_mode("regression") 
     }
   ),
   
@@ -517,22 +549,117 @@ list(
       ) 
     }
   ),
+  tar_target(
+    name = wkf_tabnet_base,
+    command = {
+      workflow() |> 
+        add_recipe(recipe = rec_base) |> 
+        add_model(
+          spec = tabnet(
+            epochs = 50,
+            batch_size = 128
+            ) |> 
+            set_engine("torch", verbose = TRUE) |> 
+            set_mode("regression")
+          ) |> 
+        last_fit(df_split)
+    }
+  ),
+  
+  tar_target(
+    name = wkf_set_base_v2,
+    command = {
+      workflowsets::workflow_set(
+        preproc = list(base = rec_base_v2_scaling), 
+        models = list(xgb      = spec_xgb_base,
+                      lightgbm = spec_lightgbm_base,
+                      lm       = spec_lm_base,
+                      nn       = spec_keras_base)
+      ) 
+    }
+  ),
+  tar_target(
+    name = wkf_tabnet_base_v2,
+    command = {
+      workflow() |> 
+        add_recipe(recipe = rec_base_v2_scaling) |> 
+        add_model(
+          spec = tabnet(
+            epochs = 50,
+            batch_size = 128
+          ) |> 
+            set_engine("torch", verbose = TRUE) |> 
+            set_mode("regression")
+        )|> 
+        last_fit(df_split)
+    }
+  ),
   
   
   ### 5. fit -------------------
   tar_target(
     name = wkf_set_base_fit,
     command = {
-      wkf_set_base |> 
-        last_fit(split = df_split, metrics = yardstick::metric_set(rmse, mae, mape, mpe))
+      make_fit_wkflow_set(wkflow_set = wkf_set_base, df_split = df_split)
     }
   ),
+  # tar_target(
+  #   name = wkf_tabnet_base_fit,
+  #   command = {
+  #     wkf_tabnet_base |> 
+  #       last_fit(df_split)
+  #   }
+  # ),
+  tar_target(
+    name = wkf_set_base_v2_fit,
+    command = {
+      make_fit_wkflow_set(wkflow_set = wkf_set_base_v2, df_split = df_split)
+    }
+  ),
+  # tar_target(
+  #   name = wkf_tabnet_base_v2_fit,
+  #   command = {
+  #     wkf_tabnet_base_v2 |> 
+  #       last_fit(df_split)
+  #   }
+  # ),
+  
   
   ### 6. metrics --------------
   tar_target(
-    name = wkf_base_metric,
+    name = wkf_set_base_fit_metric,
     command = {
-      wkf_base_fit |> collect_metrics()
+      wkf_set_base_fit |> 
+        dplyr::mutate(metrics = map(best_params, function(obj){
+          collect_metrics(obj)
+        })) |> 
+        tidyr::unnest_longer(metrics) |> 
+        dplyr::filter(metrics$.metric == "rmse")
+    }
+  ),
+  tar_target(
+    name = wkf_tabnet_base_metric,
+    command = {
+      wkf_tabnet_base |> 
+        collect_metrics()
+    }
+  ),
+  tar_target(
+    name = wkf_set_base_v2_fit_metric,
+    command = {
+      wkf_set_base_v2_fit |> 
+        dplyr::mutate(metrics = map(best_params, function(obj){
+          collect_metrics(obj)
+        })) |> 
+        tidyr::unnest_longer(metrics) |> 
+        dplyr::filter(metrics$.metric == "rmse")
+    }
+  ),
+  tar_target(
+    name = wkf_tabnet_base_v2_metric,
+    command = {
+      wkf_tabnet_base_v2 |> 
+        collect_metrics()
     }
   )
 )
