@@ -508,8 +508,23 @@ list(
     }
   ),  
   
+  tar_target(
+    name = rec_base_bake,
+    command = {
+      rec_base |> 
+        prep() |> bake(new_data = NULL)
+    }
+  ),
+  tar_target(
+    name = rec_base_v2_scaling_bake,
+    command = {
+      rec_base_v2_scaling |> 
+        prep() |> bake(new_data = NULL)
+    }
+  ),
   
   ### 3. model ----------------
+  #### 1. base ----------------
   tar_target(
     name = spec_xgb_base,
     command = {
@@ -558,6 +573,89 @@ list(
         batch_size = 128) |> 
         set_engine("torch", verbose = TRUE) |> 
         set_mode("regression") 
+    }
+  ),
+  
+  #### 2. tune ------------
+  ##### 1. spec ---------------
+  tar_target(
+    name = spec_lm_glmnet_lasso_tune,
+    command = {
+      linear_reg(mode = "regression", 
+                   penalty = tune::tune(), 
+                   mixture = 1) %>% 
+        set_engine("glmnet") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_lm_glmnet_ridge_tune,
+    command = {
+      linear_reg(mode = "regression", 
+                 penalty = tune::tune(),
+                 mixture = 0) %>% 
+        set_engine("glmnet") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_lm_glmnet_elastic_tune,
+    command = {
+      linear_reg(mode = "regression", 
+                   penalty = tune::tune(),
+                   mixture = tune::tune()) %>% 
+        set_engine("glmnet") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_boost_xgboost_tune,
+    command = {
+      boost_tree(mode = "regression",
+                 mtry = tune(),
+                 trees = tune(),
+                 min_n = tune(),
+                 tree_depth = tune(),
+                 learn_rate = tune(), 
+                 loss_reduction = tune(),
+                 sample_size = tune()
+      ) |> 
+        set_engine("xgboost")
+    }
+  ),
+  
+  tar_target(
+    name = spec_boost_lightgbm_tune,
+    command = {
+      boost_tree(mode = "regression",
+                 mtry = tune(),
+                 trees = tune(),
+                 min_n = tune(),
+                 tree_depth = tune(),
+                 learn_rate = tune(), 
+                 loss_reduction = tune()) |> 
+        set_engine("lightgbm") 
+    }
+  ),
+  
+  ##### 2. range ---------
+  tar_target(
+    name = param_tune_xgb,
+    command = {
+      spec_boost_xgboost_tune |> 
+        hardhat::extract_parameter_set_dials() |> 
+        update(mtry = finalize(mtry(), 
+                               rec_base_bake))
+    }
+  ),
+  
+  tar_target(
+    name = param_tune_lightgbm,
+    command = {
+      spec_boost_lightgbm_tune |> 
+        hardhat::extract_parameter_set_dials() |> 
+        update(mtry = finalize(mtry(), 
+                               rec_base_bake))
     }
   ),
   
@@ -694,5 +792,55 @@ list(
    command = {
      wkf_set_base_fit$best_params[[2]]$.predictions[[1]]
    }
+  ),
+  
+  
+  ## 6. ハイパラチューニング ----------
+  ### 1. workflow ----------------
+  tar_target(
+    name = wkf_set_base_tune,
+    command = {
+      workflowsets::workflow_set(
+        preproc = list(base_v1 = rec_base,
+                       base_v2 = rec_base_v2_scaling), 
+        models = list(xgb      = spec_boost_xgboost_tune,
+                      lightgbm = spec_boost_lightgbm_tune,
+                      lasso    = spec_lm_glmnet_lasso_tune,
+                      ridge    = spec_lm_glmnet_ridge_tune,
+                      elastic  = spec_lm_glmnet_elastic_tune)
+        ) |>
+        workflowsets::option_add(id = c("base_v1_xgb","base_v2_xgb"),  param_info = param_tune_xgb) |> 
+        workflowsets::option_add(id = c("base_v1_lightgbm","base_v2_lightgbm"),  param_info = param_tune_lightgbm)
+    }
+  ),
+  
+  ### 2. tune ------------
+  tar_target(
+    name = wkf_set_base_tune_fit,
+    command = {
+      
+      # all_cores <- parallel::detectCores(logical = TRUE) - 8
+      all_cores <- 10
+      
+      doFuture::registerDoFuture()
+      cl <- parallel::makeCluster(all_cores)
+      future::plan(cluster, workers = cl)
+      
+      wkf_set_base_tune |>
+        workflowsets::workflow_map(fn = "tune_bayes",verbose = TRUE,seed = 54147,
+                                   
+                                   resamples = df_kvf,
+                                   metrics = yardstick::metric_set(rmse),
+                                   iter = 50,
+                                   
+                                   objective = exp_improve(),
+                                   initial = 20,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = TRUE,
+                                                           no_improve = 20,
+                                                           
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"))
+    }
   )
 )
