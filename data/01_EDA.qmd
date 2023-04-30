@@ -14,6 +14,8 @@ execute:
 ```{r echo=FALSE, warning=FALSE, message=FALSE}
 library(targets)
 library(patchwork)
+library(plotly)
+
 tar_load_globals()
 
 tar_load_everything()
@@ -91,6 +93,11 @@ g_corr_matrix_mod
 ## 地図上での分布
 
 ```{r}
+#| fig-height: 9
+
+
 g_EDA_map
+
+plotly::ggplotly(g_EDA_map)
 ```
 

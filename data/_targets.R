@@ -438,7 +438,8 @@ list(
                      dplyr::filter(!is.na(POWER)) |> 
                      dplyr::group_by(SOT, LAT, LON) |> 
                      dplyr::summarise(mean = mean(POWER)),
-                   aes(x = LON, y = LAT, colour = mean)) +
+                   aes(x = LON, y = LAT, colour = mean), 
+                   alpha = 0.4) +
         scale_color_gradient(low = "blue", high = "red") +
         theme_bw()
     }
