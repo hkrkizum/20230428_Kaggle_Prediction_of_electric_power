@@ -363,3 +363,20 @@ tmp <-
   last_fit(df_split)
 
 tmp
+
+wkf_set_base_fit_metric$metrics |> 
+  tibble() |> 
+  dplyr::mutate(wflow_id = wkf_set_base_fit_metric$wflow_id) |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+
+
+wkf_set_base_v2_fit_metric$metrics |> 
+  tibble() |> 
+  dplyr::mutate(wflow_id = wkf_set_base_v2_fit_metric$wflow_id) |> 
+  dplyr::select(wflow_id, .metric, .estimate) |> 
+  dplyr::mutate(wflow_id = str_replace_all(wflow_id, "base_", "base_v2_"))
+
+
+wkf_tabnet_base_metric |> 
+  dplyr::mutate(wflow_id = "base_tabnet") |> 
+  dplyr::filter(.metric == "")

@@ -53,3 +53,84 @@ wkf_tabnet_base |>
   extract_fit_parsnip()
 ```
 
+## 性能
+
+### 対数変換、正規化なし
+
+```{r}
+res <- 
+  wkf_set_base_fit_metric |> 
+  dplyr::mutate(plot_res = pmap(.l = list(best_params, wflow_id), function(obj, id){
+    obj$.predictions[[1]] |> 
+      ggplot(aes(x = POWER, y = .pred)) +
+      geom_abline(slope = 1, intercept = 0) +
+      geom_point(colour = "blue", alpha = 0.4) +
+      ggtitle(id) +
+      theme_bw()
+      
+  }))
+
+res$plot_res
+
+wkf_tabnet_base |> 
+  collect_predictions() |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(colour = "blue", alpha = 0.4) +
+  ggtitle("tabnet") +
+  theme_bw()
+```
+
+### 対数変換、正規化あり
+
+```{r}
+res <- 
+  wkf_set_base_v2_fit_metric |> 
+  dplyr::mutate(plot_res = pmap(.l = list(best_params, wflow_id), function(obj, id){
+    obj$.predictions[[1]] |> 
+      ggplot(aes(x = POWER, y = .pred)) +
+      geom_abline(slope = 1, intercept = 0) +
+      geom_point(colour = "blue", alpha = 0.4) +
+      ggtitle(id) +
+      theme_bw()
+  }))
+
+res$plot_res
+
+wkf_tabnet_base_v2 |> 
+  collect_predictions() |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(colour = "blue", alpha = 0.4) +
+  ggtitle("tabnet") +
+  theme_bw()
+```
+
+### メトリクス
+
+```{r}
+wkf_set_base_fit_metric$metrics |> 
+  tibble() |> 
+  dplyr::mutate(wflow_id = wkf_set_base_fit_metric$wflow_id) |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+
+
+wkf_set_base_v2_fit_metric$metrics |> 
+  tibble() |> 
+  dplyr::mutate(wflow_id = wkf_set_base_v2_fit_metric$wflow_id) |> 
+  dplyr::select(wflow_id, .metric, .estimate) |> 
+  dplyr::mutate(wflow_id = str_replace_all(wflow_id, "base_", "base_v2_"))
+
+
+wkf_tabnet_base_metric |> 
+  dplyr::mutate(wflow_id = "base_tabnet") |> 
+  dplyr::filter(.metric == "rmse") |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+
+
+wkf_tabnet_base_v2_metric |> 
+  dplyr::mutate(wflow_id = "base_v2_tabnet") |> 
+  dplyr::filter(.metric == "rmse") |> 
+  dplyr::select(wflow_id, .metric, .estimate) 
+```
+
