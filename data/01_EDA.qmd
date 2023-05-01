@@ -18,7 +18,26 @@ library(plotly)
 
 tar_load_globals()
 
-tar_load_everything()
+tar_load(
+  c(
+  df_train,
+  df_test,
+  g_EDA_1_trend,
+  g_EDA_1_trend_group,
+  g_corr_matrix,
+  g_hist_target,
+  g_hist_target_log10,
+  param_colnames,
+  g_hist_all,
+  g_hist_all_mod,
+  g_corr_all,
+  g_corr_all_mod,
+  g_corr_all_log10,
+  g_corr_all_log10_mod,
+  g_corr_matrix_mod,
+  g_EDA_map
+  )
+)
 ```
 
 ## Chech data

@@ -18,7 +18,25 @@ library(gt)
 
 tar_load_globals()
 
-tar_load_everything()
+tar_load(
+  c(
+    rec_base,
+    rec_base_v2_scaling,
+    spec_xgb_base,
+    spec_lightgbm_base,
+    spec_lm_base,
+    spec_keras_base,
+    wkf_tabnet_base,
+    wkf_set_base_fit_metric,
+    wkf_tabnet_base,
+    wkf_tabnet_base_metric,
+    
+    wkf_set_base_v2_fit_metric,
+    wkf_tabnet_base_v2,
+    
+    base_lightgbd_prediction
+  )
+)
 ```
 
 ## ベースモデル
