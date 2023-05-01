@@ -1,7 +1,7 @@
 version: '3'
 services:
   RStudio:
-    image: hkrkizum/r-tidymodels:20230430-cuda-11.7.1-cudnn8-snapshot
+    image: hkrkizum/r-tidymodels:20230430-cuda-11.7.1-cudnn8
     ports:
       - "8787:8787"
     environment:

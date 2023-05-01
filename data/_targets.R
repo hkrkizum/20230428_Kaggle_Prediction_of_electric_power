@@ -40,6 +40,7 @@ tar_option_set(
                
                "rnaturalearth",
                "rnaturalearthdata",
+               "rnaturalearthhires",
                "rgeos"),
   format = "qs",
   seed = 54147
@@ -834,10 +835,10 @@ list(
                                    iter = 50,
                                    
                                    objective = exp_improve(),
-                                   initial = 20,
+                                   initial = 10,
                                    control = control_bayes(verbose = TRUE,
                                                            verbose_iter = TRUE,
-                                                           no_improve = 20,
+                                                           no_improve = 10,
                                                            
                                                            allow_par = TRUE,
                                                            parallel_over = "resamples"))
