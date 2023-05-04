@@ -25,6 +25,7 @@ tmp |>
   geom_line(alpha = 0.1)
   
 
+
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(rgeos)
@@ -691,11 +692,21 @@ df_model_train_mod |>
   prep() |> 
   bake(new_data = NULL)
 
+tar_load(wkf_FE_v3)
 wkf_FE_v3[[1]] |> 
-  autoplot() +
+  autoplot(metric = "rmse") +
   geom_text(aes(label = wflow_id), nudge_x = 0.5) +
   coord_flip() +
   facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
+
+wkf_FE_v3[[1]] |> 
+  extract_workflow(id = "rec_v3_base_xgb_base") |> 
+  fit(df_model_train_mod) |> 
+  extract_preprocessor() |> 
+  prep() |> 
+  bake(new_data = NULL) |> 
+  glimpse()
+
 
 tmp$data |> str()
 
@@ -745,3 +756,100 @@ df_train |>
   dplyr::mutate(POWER_mean_roll_7_lag_2 = lag(POWER_mean_roll_7, 2)) |> 
   dplyr::mutate(POWER_mean_roll_7_lag_3 = lag(POWER_mean_roll_7, 3)) |> 
   glimpse()
+
+df_train |> 
+  dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+  dplyr::group_by(DATE) |> 
+  dplyr::summarise(POWER_mean = mean(POWER)) |> 
+  dplyr::filter(DATE < "2019-04-01") |> 
+  dplyr::filter(DATE > "2019-02-01") |> 
+  dplyr::filter(POWER_mean > 50)
+  
+
+
+# データ間の距離を算出
+dist_Geo <- dist(df_EDA |> 
+                   dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+                   dplyr::select(LAT, LON), method = "euclidean")
+
+# 階層的クラスタリングの実行
+hclust_Geo <- hclust(dist_Geo, method = "ward.D2")
+# クラスタリングの結果をプロット
+plot(hclust_Geo)
+
+param_cluster <- cutree(hclust_Geo, k = 10)
+
+param_cluster
+
+df_Geo <- df_EDA |> 
+  dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+  dplyr::mutate(Geo_Group = param_cluster)
+
+df_Geo
+
+all_cores <- 10
+
+library(doParallel)
+cl <- makePSOCKcluster(all_cores)
+registerDoParallel(cl)
+
+wkf <- 
+  workflowsets::workflow_set(
+    preproc = list(
+      rec_v3_base = rec_v3_base, 
+      # rec_v1   = rec_v1,
+      rec_v2   = rec_v2,
+      rec_v3_mean = rec_v3_mean,
+      
+      rec_v3_roll_1 = rec_v3_roll_1,
+      rec_v3_roll_5 = rec_v3_roll_5,
+      rec_v3_roll_7 = rec_v3_roll_7,
+      
+      rec_v3_lag_1 = rec_v3_lag_1,
+      rec_v3_lag_2 = rec_v3_lag_2,
+      rec_v3_lag_3 = rec_v3_lag_3,
+      
+      rec_v3_lead_1 = rec_v3_lead_1,
+      rec_v3_lead_2 = rec_v3_lead_2,
+      rec_v3_lead_3 = rec_v3_lead_3,
+      
+      rec_v3_lag_1_2 = rec_v3_lag_1_2,
+      rec_v3_lag_1_2_3 = rec_v3_lag_1_2_3,
+      
+      rec_v3_mean_lag_1 = rec_v3_mean_lag_1,
+      rec_v3_mean_lag_1_2 = rec_v3_mean_lag_1_2,
+      rec_v3_mean_lag_1_2_3 = rec_v3_mean_lag_1_2_3,
+      
+      rec_v3_lag_1_lead_1 = rec_v3_lag_1_lead_1,
+      rec_v3_lag_1_2_lead_1_2 = rec_v3_lag_1_2_lead_1_2,
+      rec_v3_lag_1_2_3_lead_1_2_3 = rec_v3_lag_1_2_3_lead_1_2_3,
+      
+      rec_v3_mean_lag_1_2_lead_1_2 = rec_v3_mean_lag_1_2_lead_1_2,
+      rec_v3_mean_lag_1_2_3_lead_1_2_3 = rec_v3_mean_lag_1_2_3_lead_1_2_3,
+      
+      rec_v4 = rec_v4,
+      rec_v5 = rec_v5
+    ),
+    models = list(xgb_base = spec_xgb_feature_enginerring),
+    cross = TRUE
+  ) |> 
+  workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
+                             resamples = df_kvf_mod,
+                             metrics = yardstick::metric_set(rmse, mae, mape),
+                             control = control_resamples(save_pred = TRUE, 
+                                                         parallel_over ="resamples"))
+stopImplicitCluster(cl)
+
+wkf$result[[1]]$.notes[[1]]$note
+
+res <- 
+  wkf_FE_tune_v1[[1]] |> 
+  extract_workflow(id = "rec_v3_lag_1_2_lead_1_2_xgb") |> 
+  finalize_workflow(
+    wkf_FE_tune_v1[[1]] |> 
+      extract_workflow_set_result(id = "rec_v3_lag_1_2_lead_1_2_xgb") |>
+      select_best()    
+  ) |>
+  fit(df_model_train_mod)
+
+predict(res, new_data = df_model_test_mod)

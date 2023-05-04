@@ -19,8 +19,9 @@ tar_option_set(
                "patchwork",
                
                "tidymodels",
-               "doFuture",
-               "parallel",
+               "doParallel",
+               # "doFuture",
+               # "parallel",
                
                "xgboost",
                "glmnet",
@@ -501,11 +502,10 @@ list(
     command = {
       df_model_train |> 
         recipes::recipe(POWER ~ .) |> 
-        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(ID, SOT, new_role = "id variable") |> 
         recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
         recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
-        recipes::step_integer(DATE_month, DATE_dow) |> 
-        recipes::step_select(-SOT)
+        recipes::step_integer(DATE_month, DATE_dow)
     }
   ),
   
@@ -514,9 +514,8 @@ list(
     command = {
       df_model_train |> 
         recipes::recipe(POWER ~ .) |> 
-        recipes::update_role(ID, new_role = "id variable") |> 
-        recipes::step_select(-SOT) |> 
-        
+        recipes::update_role(ID,SOT, new_role = "id variable") |> 
+
         recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
         recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
         
@@ -607,7 +606,8 @@ list(
     command = {
       df_train |> 
         dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
-        dplyr::left_join(df_mean_POWER)
+        dplyr::left_join(df_mean_POWER) |> 
+        dplyr::left_join(df_Geo)
     }
   ),
   tar_target(
@@ -615,7 +615,8 @@ list(
     command = {
       df_train |> 
         dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
-        dplyr::left_join(df_mean_POWER)
+        dplyr::left_join(df_mean_POWER) |> 
+        dplyr::left_join(df_Geo)
     }
   ),
   ###### 2. Split ----------
@@ -657,7 +658,9 @@ list(
         recipes::update_role(SOT, new_role = "id variable") |> 
         recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
         recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
-        recipes::step_integer(DATE_month, DATE_dow) 
+        recipes::step_integer(DATE_month, DATE_dow) |> 
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        recipes::step_dummy(Geo_Group)
     }
   ),
   
@@ -674,7 +677,9 @@ list(
     name = rec_v3_base,
     command = {
       rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"))
+        recipes::update_role(
+          dplyr::matches("POWER_mean_|Geo_Group_"), new_role = "non-use variable"
+          )
     }
   ),
   
@@ -684,10 +689,8 @@ list(
   tar_target(
     name = rec_v3_mean,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean
-                             )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean, new_role = "predictor")
     }
   ),
   
@@ -697,10 +700,8 @@ list(
   tar_target(
     name = rec_v3_roll_1,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_roll_1
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_roll_1, new_role = "predictor")
     }
   ),
   
@@ -710,10 +711,8 @@ list(
   tar_target(
     name = rec_v3_roll_5,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_roll_5
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_roll_5, new_role = "predictor")
     }
   ),
   
@@ -723,10 +722,8 @@ list(
   tar_target(
     name = rec_v3_roll_7,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_roll_7
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_roll_7, new_role = "predictor")
     }
   ),
   
@@ -736,10 +733,8 @@ list(
   tar_target(
     name = rec_v3_lag_1,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1, new_role = "predictor")
     }
   ),
   #
@@ -748,10 +743,8 @@ list(
   tar_target(
     name = rec_v3_lag_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_2
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_2, new_role = "predictor")
     }
   ),
   
@@ -761,10 +754,8 @@ list(
   tar_target(
     name = rec_v3_lag_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_3
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_3, new_role = "predictor")
     }
   ),
   
@@ -774,11 +765,10 @@ list(
   tar_target(
     name = rec_v3_lag_1_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1,
-                             POWER_mean_lag_2
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             new_role = "predictor")
     }
   ),
   
@@ -788,12 +778,11 @@ list(
   tar_target(
     name = rec_v3_lag_1_2_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1,
                              POWER_mean_lag_2,
-                             POWER_mean_lag_3
-        )
+                             POWER_mean_lag_3,
+                             new_role = "predictor")
     }
   ),
   
@@ -803,11 +792,10 @@ list(
   tar_target(
     name = rec_v3_mean_lag_1,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean,
                              POWER_mean_lag_1,
-        )
+                             new_role = "predictor")
     }
   ),
   
@@ -817,12 +805,11 @@ list(
   tar_target(
     name = rec_v3_mean_lag_1_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean,
                              POWER_mean_lag_1,
-                             POWER_mean_lag_2
-        )
+                             POWER_mean_lag_2,
+                             new_role = "predictor")
     }
   ),
   #
@@ -831,13 +818,12 @@ list(
   tar_target(
     name = rec_v3_mean_lag_1_2_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean,
                              POWER_mean_lag_1,
                              POWER_mean_lag_2,
-                             POWER_mean_lag_3
-        )
+                             POWER_mean_lag_3,
+                             new_role = "predictor")
     }
   ),
   
@@ -847,46 +833,44 @@ list(
   tar_target(
     name = rec_v3_lead_1,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lead_1
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lead_1, new_role = "predictor")
+      
     }
   ),
   tar_target(
     name = rec_v3_lead_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lead_2
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lead_2, new_role = "predictor")
+      
     }
   ),
   tar_target(
     name = rec_v3_lead_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lead_3
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lead_3, new_role = "predictor")
+     
     }
   ),
   tar_target(
     name = rec_v3_lead_1_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lead_1_2
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor")
     }
   ),
   tar_target(
     name = rec_v3_lead_1_2_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lead_1_2_3
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             POWER_mean_lead_3,
+                             new_role = "predictor")
     }
   ),
   
@@ -896,68 +880,175 @@ list(
   tar_target(
     name = rec_v3_lag_1_lead_1,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1,
-                             POWER_mean_lead_1
-        )
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1,
+                             POWER_mean_lead_1,
+                             new_role = "predictor")
     }
   ),
   tar_target(
     name = rec_v3_lag_1_2_lead_1_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1,
                              POWER_mean_lag_2,
                              POWER_mean_lead_1,
-                             POWER_mean_lead_2
-        )
+                             POWER_mean_lead_2,
+                             new_role = "predictor")
     }
   ),
   tar_target(
     name = rec_v3_lag_1_2_3_lead_1_2_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean_lag_1,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean_lag_1,
                              POWER_mean_lag_2,
                              POWER_mean_lag_3,
                              POWER_mean_lead_1,
                              POWER_mean_lead_2,
-                             POWER_mean_lead_3
-        )
+                             POWER_mean_lead_3,
+                             new_role = "predictor")
     }
   ),
   
   tar_target(
     name = rec_v3_mean_lag_1_2_lead_1_2,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean,
                              POWER_mean_lag_1,
                              POWER_mean_lag_2,
                              POWER_mean_lead_1,
-                             POWER_mean_lead_2
-        )
+                             POWER_mean_lead_2,
+                             new_role = "predictor")
     }
   ),
   tar_target(
     name = rec_v3_mean_lag_1_2_3_lead_1_2_3,
     command = {
-      rec_v2 |> 
-        recipes::step_select(!dplyr::matches("POWER_mean_"),
-                             POWER_mean,
+      rec_v3_base |> 
+        recipes::update_role(POWER_mean,
                              POWER_mean_lag_1,
                              POWER_mean_lag_2,
                              POWER_mean_lag_3,
                              POWER_mean_lead_1,
                              POWER_mean_lead_2,
-                             POWER_mean_lead_3
+                             POWER_mean_lead_3,
+                             new_role = "predictor")
+    }
+  ),
+  
+  ##### 4. v4 ---------------------------------
+  #
+  # 2月末～3月頭にあるスパイク期間をフラグにする
+  #
+  #
+  tar_target(
+    name = rec_v4,
+    command = {
+      df_model_train_mod |> 
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        
+        recipes::step_mutate(Flag_Spike = if_else(
+          DATE >= "2019-02-21" & DATE <= "2019-03-05",
+          1,
+          0
+        )) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        recipes::step_integer(DATE_month, DATE_dow) |> 
+        recipes::update_role(dplyr::matches("POWER_mean_"), Geo_Group,
+                             new_role = "non-use variable")
+    }
+  ),
+  
+  ##### 5. v5 ---------------------------------
+  #
+  #
+  # 地域ごとにクラスタリングする
+  #
+  #
+  tar_target(
+    name = df_Geo,
+    command = {
+      # データ間の距離を算出
+      dist_Geo <- dist(df_EDA |> 
+                         dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+                         dplyr::select(LAT, LON), method = "euclidean")
+      
+      # 階層的クラスタリングの実行
+      hclust_Geo <- hclust(dist_Geo, method = "ward.D2")
+      # クラスタリングの結果をプロット
+      # plot(hclust_Geo)
+      
+      param_cluster <- cutree(hclust_Geo, k = 10)
+      
+      # param_cluster
+      
+      df_Geo <- df_EDA |> 
+        dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+        dplyr::select(LAT, LON) |> 
+        dplyr::mutate(Geo_Group = param_cluster)
+      
+      return(df_Geo)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v5,
+    command = {
+      rec_v3_base |> 
+        recipes::update_role(dplyr::matches("Geo_Group_"),
+                             new_role = "predictor"
         )
     }
   ),
+  
+  tar_target(
+    name = rec_v5_mod,
+    command = {
+      rec_v5 |> 
+        recipes::update_role(POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor"
+        )
+    }
+  ),
+  
+  tar_target(
+    name = rec_v5_mod_v4,
+    command = {
+      df_model_train_mod |> 
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        
+        recipes::step_mutate(Flag_Spike = if_else(
+          DATE >= "2019-02-21" & DATE <= "2019-03-05",
+          1,
+          0
+        )) |> 
+        
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        recipes::step_integer(DATE_month, DATE_dow) |> 
+        
+        recipes::update_role(dplyr::matches("POWER_mean_"), new_role = "non-use") |> 
+        recipes::update_role(POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor"
+        )
+    }
+  ),
+  
+  ##### 6. v6 ----------------------------
+  
   
   ### 3. model ----------------
   #### 1. base ----------------
@@ -1112,59 +1203,61 @@ list(
     name = wkf_set_base,
     command = {
       workflowsets::workflow_set(
-        preproc = list(base = rec_base), 
+        preproc = list(base    = rec_base,
+                       base_v2 = rec_base_v2_scaling), 
         models = list(xgb      = spec_xgb_base,
                       lightgbm = spec_lightgbm_base,
                       lm       = spec_lm_base,
-                      nn       = spec_keras_base)
+                      nn       = spec_keras_base),
+        cross = TRUE
       ) 
     }
   ),
-  tar_target(
-    name = wkf_tabnet_base,
-    command = {
-      workflow() |> 
-        add_recipe(recipe = rec_base) |> 
-        add_model(
-          spec = tabnet(
-            epochs = 50,
-            batch_size = 128
-            ) |> 
-            set_engine("torch", verbose = TRUE) |> 
-            set_mode("regression")
-          ) |> 
-        last_fit(df_split)
-    }
-  ),
+  # tar_target(
+  #   name = wkf_tabnet_base,
+  #   command = {
+  #     workflow() |> 
+  #       add_recipe(recipe = rec_base) |> 
+  #       add_model(
+  #         spec = tabnet(
+  #           epochs = 50,
+  #           batch_size = 128
+  #           ) |> 
+  #           set_engine("torch", verbose = TRUE) |> 
+  #           set_mode("regression")
+  #         ) |> 
+  #       last_fit(df_split)
+  #   }
+  # ),
   
-  tar_target(
-    name = wkf_set_base_v2,
-    command = {
-      workflowsets::workflow_set(
-        preproc = list(base = rec_base_v2_scaling), 
-        models = list(xgb      = spec_xgb_base,
-                      lightgbm = spec_lightgbm_base,
-                      lm       = spec_lm_base,
-                      nn       = spec_keras_base)
-      ) 
-    }
-  ),
-  tar_target(
-    name = wkf_tabnet_base_v2,
-    command = {
-      workflow() |> 
-        add_recipe(recipe = rec_base_v2_scaling) |> 
-        add_model(
-          spec = tabnet(
-            epochs = 50,
-            batch_size = 128
-          ) |> 
-            set_engine("torch", verbose = TRUE) |> 
-            set_mode("regression")
-        )|> 
-        last_fit(df_split)
-    }
-  ),
+  # tar_target(
+  #   name = wkf_set_base_v2,
+  #   command = {
+  #     workflowsets::workflow_set(
+  #       preproc = list(base = rec_base_v2_scaling), 
+  #       models = list(xgb      = spec_xgb_base,
+  #                     lightgbm = spec_lightgbm_base,
+  #                     lm       = spec_lm_base,
+  #                     nn       = spec_keras_base)
+  #     ) 
+  #   }
+  # ),
+  # tar_target(
+  #   name = wkf_tabnet_base_v2,
+  #   command = {
+  #     workflow() |> 
+  #       add_recipe(recipe = rec_base_v2_scaling) |> 
+  #       add_model(
+  #         spec = tabnet(
+  #           epochs = 50,
+  #           batch_size = 128
+  #         ) |> 
+  #           set_engine("torch", verbose = TRUE) |> 
+  #           set_mode("regression")
+  #       )|> 
+  #       last_fit(df_split)
+  #   }
+  # ),
   
   #### 2. base by XGB -------------------------
   tar_target(
@@ -1181,7 +1274,16 @@ list(
   tar_target(
     name = wkf_set_base_fit,
     command = {
-      make_fit_wkflow_set(wkflow_set = wkf_set_base, df_split = df_split)
+      wkf_set_base |> 
+        workflowsets::workflow_map(fn = "fit_resamples",
+                                   verbose = TRUE,
+                                   resamples = df_kvf,
+                                   metrics = yardstick::metric_set(rmse, mae, mape),
+                                   control = control_resamples(
+                                     verbose = FALSE,
+                                     allow_par = TRUE,
+                                     save_pred = TRUE,
+                                   ))
     }
   ),
   # tar_target(
@@ -1191,12 +1293,12 @@ list(
   #       last_fit(df_split)
   #   }
   # ),
-  tar_target(
-    name = wkf_set_base_v2_fit,
-    command = {
-      make_fit_wkflow_set(wkflow_set = wkf_set_base_v2, df_split = df_split)
-    }
-  ),
+  # tar_target(
+  #   name = wkf_set_base_v2_fit,
+  #   command = {
+  #     make_fit_wkflow_set(wkflow_set = wkf_set_base_v2, df_split = df_split)
+  #   }
+  # ),
   # tar_target(
   #   name = wkf_tabnet_base_v2_fit,
   #   command = {
@@ -1211,46 +1313,42 @@ list(
     name = wkf_set_base_fit_metric,
     command = {
       wkf_set_base_fit |> 
-        dplyr::mutate(metrics = map(best_params, function(obj){
-          collect_metrics(obj)
-        })) |> 
-        tidyr::unnest_longer(metrics) |> 
-        dplyr::filter(metrics$.metric == "rmse")
-    }
-  ),
-  tar_target(
-    name = wkf_tabnet_base_metric,
-    command = {
-      wkf_tabnet_base |> 
         collect_metrics()
     }
   ),
-  tar_target(
-    name = wkf_set_base_v2_fit_metric,
-    command = {
-      wkf_set_base_v2_fit |> 
-        dplyr::mutate(metrics = map(best_params, function(obj){
-          collect_metrics(obj)
-        })) |> 
-        tidyr::unnest_longer(metrics) |> 
-        dplyr::filter(metrics$.metric == "rmse")
-    }
-  ),
-  tar_target(
-    name = wkf_tabnet_base_v2_metric,
-    command = {
-      wkf_tabnet_base_v2 |> 
-        collect_metrics()
-    }
-  ),
+  # tar_target(
+  #   name = wkf_tabnet_base_metric,
+  #   command = {
+  #     wkf_tabnet_base |> 
+  #       collect_metrics()
+  #   }
+  # ),
+  # tar_target(
+  #   name = wkf_set_base_v2_fit_metric,
+  #   command = {
+  #     wkf_set_base_v2_fit |> 
+  #       dplyr::mutate(metrics = map(best_params, function(obj){
+  #         collect_metrics(obj)
+  #       })) |> 
+  #       tidyr::unnest_longer(metrics) |> 
+  #       dplyr::filter(metrics$.metric == "rmse")
+  #   }
+  # ),
+  # tar_target(
+  #   name = wkf_tabnet_base_v2_metric,
+  #   command = {
+  #     wkf_tabnet_base_v2 |> 
+  #       collect_metrics()
+  #   }
+  # ),
   
   ## 5. モデル改善 -----------------
-  tar_target(
-   name = base_lightgbd_prediction,
-   command = {
-     wkf_set_base_fit$best_params[[2]]$.predictions[[1]]
-   }
-  ),
+  # tar_target(
+  #  name = base_lightgbd_prediction,
+  #  command = {
+  #    wkf_set_base_fit$best_params[[2]]$.predictions[[1]]
+  #  }
+  # ),
   
   ### base by xgb --------------
   tar_target(
@@ -1268,17 +1366,18 @@ list(
                                       param_df_kvf = df_kvf)
   ),
   ### v2 ----------------
-  tar_target(
-    name = wkf_FE_v2,
-    command = make_fit_wkflow_metrics(param_recipe = rec_v2,
-                                      param_model = spec_xgb_feature_enginerring,
-                                      param_df_kvf = df_kvf_mod)
-  ),
-  ### v3 ----------------
+  # tar_target(
+  #   name = wkf_FE_v2,
+  #   command = make_fit_wkflow_metrics(param_recipe = rec_v2,
+  #                                     param_model = spec_xgb_feature_enginerring,
+  #                                     param_df_kvf = df_kvf_mod)
+  # ),
+  ### v3 & v4 & v5 ----------------
   tar_target(
     name = wkf_FE_v3,
     command = {
-      all_cores <- parallel::detectCores(logical = FALSE)
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
       
       library(doParallel)
       cl <- makePSOCKcluster(all_cores)
@@ -1317,7 +1416,13 @@ list(
              rec_v3_lag_1_2_3_lead_1_2_3 = rec_v3_lag_1_2_3_lead_1_2_3,
              
              rec_v3_mean_lag_1_2_lead_1_2 = rec_v3_mean_lag_1_2_lead_1_2,
-             rec_v3_mean_lag_1_2_3_lead_1_2_3 = rec_v3_mean_lag_1_2_3_lead_1_2_3 
+             rec_v3_mean_lag_1_2_3_lead_1_2_3 = rec_v3_mean_lag_1_2_3_lead_1_2_3,
+             
+             rec_v4 = rec_v4,
+             rec_v5 = rec_v5,
+             rec_v5_mod = rec_v5_mod,
+             
+             rec_v5_mod_v4 = rec_v5_mod_v4
             ),
           models = list(xgb_base = spec_xgb_feature_enginerring),
           cross = TRUE
@@ -1325,17 +1430,59 @@ list(
         workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
                                    resamples = df_kvf_mod,
                                    metrics = yardstick::metric_set(rmse, mae, mape),
-                                   control = control_resamples(save_pred = TRUE))
+                                   control = control_resamples(save_pred = TRUE, 
+                                                               parallel_over ="resamples"))
       
       wkf_metrics <- 
         wkf |> 
         collect_metrics()
       
-      stopImplicitCluster()
+      doParallel::stopImplicitCluster()
       
       return(list(wkf, wkf_metrics))
     }
   ),
+  
+  ### 4. selected models -----------------------------------
+  # tar_target(
+  #   name = wkf_FE_v4,
+  #   command = {
+  #     # all_cores <- parallel::detectCores(logical = FALSE)
+  #     all_cores <- 10
+  #     
+  #     library(doParallel)
+  #     cl <- makePSOCKcluster(all_cores)
+  #     registerDoParallel(cl)
+  #     
+  #     
+  #     wkf <- 
+  #       workflowsets::workflow_set(
+  #         preproc = list(
+  #           rec_v3_base = rec_v3_base, 
+  #           rec_v2   = rec_v2,
+  #           
+  #           rec_v3_mean_lag_1_2_lead_1_2 = rec_v3_mean_lag_1_2_lead_1_2,
+  #           rec_v5_mod = rec_v5_mod,
+  #           
+  #         ),
+  #         models = list(xgb_base = spec_xgb_feature_enginerring),
+  #         cross = TRUE
+  #       ) |> 
+  #       workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
+  #                                  resamples = df_kvf_mod,
+  #                                  metrics = yardstick::metric_set(rmse, mae, mape),
+  #                                  control = control_resamples(save_pred = TRUE, 
+  #                                                              parallel_over ="resamples"))
+  #     
+  #     wkf_metrics <- 
+  #       wkf |> 
+  #       collect_metrics()
+  #     
+  #     doParallel::stopImplicitCluster()
+  #     
+  #     return(list(wkf, wkf_metrics))
+  #   }
+  # ),
   
   ## 6. ハイパラチューニング ----------
   ### 1. workflow ----------------
@@ -1398,6 +1545,69 @@ list(
       return(res)
     }
   ),
+  
+  # tar_target(
+  #   name = wkf_FE_tune_v1,
+  #   command = {
+  #     # all_cores <- parallel::detectCores(logical = FALSE)
+  #     all_cores <- 10
+  #     
+  #     library(doParallel)
+  #     cl <- makePSOCKcluster(all_cores)
+  #     registerDoParallel(cl)
+  #     
+  #     
+  #     wkf <- 
+  #       workflowsets::workflow_set(
+  #         preproc = list(
+  #           rec_v3_lag_1_2_lead_1_2 = rec_v3_lag_1_2_lead_1_2,
+  #           rec_v5_mod = rec_v5_mod
+  #         ),
+  #         models = list(xgb = spec_boost_xgboost_tune),
+  #         cross = TRUE
+  #       ) |> 
+  #       workflowsets::option_add(id = "rec_v3_lag_1_2_lead_1_2_xgb",
+  #                                param_info = spec_boost_xgboost_tune |> 
+  #                                  hardhat::extract_parameter_set_dials() |> 
+  #                                  update(mtry = finalize(
+  #                                    mtry(),
+  #                                    rec_v3_lag_1_2_lead_1_2 |> 
+  #                                      prep() |> bake(new_data = NULL)))
+  #                               ) |> 
+  #       workflowsets::option_add(id = "rec_v5_mod_xgb",
+  #                                param_info = spec_boost_xgboost_tune |> 
+  #                                  hardhat::extract_parameter_set_dials() |> 
+  #                                  update(mtry = finalize(
+  #                                    mtry(),
+  #                                    rec_v5_mod |> 
+  #                                      prep() |> bake(new_data = NULL)))
+  #       ) |> 
+  #       workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+  #                                  resamples = df_kvf_mod,
+  #                                  metrics = yardstick::metric_set(rmse),
+  #                                  
+  #                                  fn = "tune_bayes",
+  #                                  iter = 20,
+  #                                  objective = exp_improve(),
+  #                                  initial = 20,
+  #                                  control = control_bayes(verbose = TRUE,
+  #                                                          verbose_iter = TRUE,
+  #                                                          save_pred = TRUE,
+  #                                                          no_improve = 10,
+  # 
+  #                                                          allow_par = TRUE,
+  #                                                          parallel_over = "resamples"
+  #                                  ))
+  #     
+  #     wkf_metrics <- 
+  #       wkf |> 
+  #       collect_metrics()
+  #     
+  #     doParallel::stopImplicitCluster()
+  #     
+  #     return(list(wkf, wkf_metrics))
+  #   }
+  # ),
   ### 3. metrics ---------------
   tar_target(
     name = base_xgb_prediction,
