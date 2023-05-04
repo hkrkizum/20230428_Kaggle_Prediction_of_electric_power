@@ -574,3 +574,174 @@ rec_base_bake |>
   correlation::correlation() |> 
   summary() |> 
   plot()
+
+rec_base_bake |> 
+  dplyr::mutate(across(.cols = c(DATE_month, DATE_week, DATE_dow), 
+                       .fns = ~fct_relabel(as.character(.x), sort))) |> 
+  skimr::skim()
+
+
+rec_base |> 
+  step_mutate(
+    across(.cols = c(DATE_month, DATE_week, DATE_dow), 
+           .fns = ~fct_relabel(as.character(.x), sort))
+  ) |> 
+  step_dummy(all_nominal_predictors()) |> 
+  prep() |>
+  bake(new_data = NULL) |> 
+  skimr::skim()
+
+tmp <- 
+  make_fit_wkflow_metrics(param_recipe = rec_base,
+                          param_model = spec_xgb_feature_enginerring)
+
+
+df_tmp <- 
+  df_EDA |> 
+  dplyr::filter(dataset == "train") |> 
+  dplyr::group_by(DATE) |> 
+  dplyr::summarise(POWER = mean(POWER)) |> 
+  dplyr::arrange(DATE) |> 
+  dplyr::mutate(POWER_lag_1 = lag(POWER, default = NA_real_)) |> 
+  dplyr::mutate(POWER_delta_1 = POWER - POWER_lag_1) |> 
+  dplyr::mutate(POWER_mean_7 = slider::slide_vec(.x = POWER,
+                                                 .f = mean,
+                                                 .before = 3,
+                                                 .after = 3)) |> 
+  dplyr::mutate(POWER_mean_5 = slider::slide_vec(.x = POWER,
+                                                 .f = mean,
+                                                 .before = 2,
+                                                 .after = 2)) |>
+  dplyr::mutate(POWER_mean_3 = slider::slide_vec(.x = POWER,
+                                                 .f = mean,
+                                                 .before = 1,
+                                                 .after = 1)) |> 
+  tidyr::pivot_longer(cols = -DATE,
+                      names_to = "param",
+                      values_to = "val")
+
+df_tmp |> 
+  dplyr::filter(!param %in% c("POWER_lag_1")) |> 
+  ggplot(aes(x = DATE, y = val)) +
+  facet_grid(param ~ ., scales = "free_y") +
+  geom_line()
+
+df_tmp |> 
+  dplyr::filter(param == "POWER") |> 
+  dplyr::pull(val) |> 
+  acf()
+
+
+dplyr::setdiff(df_train$DATE |> unique(),
+               df_test$DATE |> unique())
+
+# df_train$DATE |> 
+df_test$DATE |>
+  unique() |>
+  str_match("2019/12/25|2019/6/17")
+
+df_tmp |> 
+  dplyr::filter(param == "POWER_mean_6") |> 
+  dplyr::pull(val) |> 
+  acf()
+
+
+df_mean_POWER <- 
+  df_train |> 
+  dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+  dplyr::group_by(DATE) |> 
+  dplyr::summarise(POWER_mean = mean(POWER)) |> 
+  dplyr::mutate(POWER_mean_roll_1 = slider::slide_vec(.x = POWER_mean,
+                                                      .f = mean,
+                                                      .before = 1,
+                                                      .after = 1)) |> 
+  dplyr::mutate(POWER_mean_roll_5 = slider::slide_vec(.x = POWER_mean,
+                                                        .f = mean,
+                                                        .before = 2,
+                                                        .after = 2)) |> 
+  dplyr::mutate(POWER_mean_roll_7 = slider::slide_vec(.x = POWER_mean,
+                                                      .f = mean,
+                                                      .before = 3,
+                                                      .after = 3)) |> 
+  dplyr::mutate(POWER_mean_lag_1 = lag(POWER_mean, 1)) |> 
+  dplyr::mutate(POWER_mean_lag_2 = lag(POWER_mean, 2)) |> 
+  dplyr::mutate(POWER_mean_lag_3 = lag(POWER_mean, 3)) |> 
+  dplyr::mutate(POWER_mean_lag_1 = if_else(is.na(POWER_mean_lag_1), POWER_mean, POWER_mean_lag_1)) |> 
+  dplyr::mutate(POWER_mean_lag_2 = if_else(is.na(POWER_mean_lag_2), POWER_mean, POWER_mean_lag_2)) |> 
+  dplyr::mutate(POWER_mean_lag_3 = if_else(is.na(POWER_mean_lag_3), POWER_mean, POWER_mean_lag_3))
+  
+
+df_test |> 
+  dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |>
+  dplyr::left_join(df_mean_POWER) |> 
+  dplyr::filter(if_any(everything(), ~is.na(.x)))
+
+
+df_model_train_mod |> 
+  recipes::recipe(POWER ~ .) |> 
+  recipes::update_role(ID, new_role = "id variable") |> 
+  recipes::update_role(SOT, new_role = "id variable") |> 
+  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+  recipes::step_integer(DATE_month, DATE_dow) |> 
+  recipes::step_select(
+    !dplyr::matches("POWER_mean_"),
+    POWER_mean
+  ) |> 
+  prep() |> 
+  bake(new_data = NULL)
+
+wkf_FE_v3[[1]] |> 
+  autoplot() +
+  geom_text(aes(label = wflow_id), nudge_x = 0.5) +
+  coord_flip() +
+  facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
+
+tmp$data |> str()
+
+
+tar_meta() |> 
+  dplyr::filter(str_detect(name, "rec_v3")) |> 
+  view()
+
+
+df_train |> 
+  dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+  dplyr::group_by(DATE) |> 
+  dplyr::summarise(POWER_mean = mean(POWER)) |> 
+  dplyr::mutate(POWER_mean_roll_1 = slider::slide_vec(.x = POWER_mean,
+                                                      .f = mean,
+                                                      .before = 1,
+                                                      .after = 1)) |> 
+  dplyr::mutate(POWER_mean_roll_5 = slider::slide_vec(.x = POWER_mean,
+                                                      .f = mean,
+                                                      .before = 2,
+                                                      .after = 2)) |> 
+  dplyr::mutate(POWER_mean_roll_7 = slider::slide_vec(.x = POWER_mean,
+                                                      .f = mean,
+                                                      .before = 3,
+                                                      .after = 3)) |> 
+  dplyr::mutate(POWER_mean_lag_1 = lag(POWER_mean, 1)) |> 
+  dplyr::mutate(POWER_mean_lag_2 = lag(POWER_mean, 2)) |> 
+  dplyr::mutate(POWER_mean_lag_3 = lag(POWER_mean, 3)) |> 
+  
+  dplyr::mutate(POWER_mean_lead_1 = lead(POWER_mean, 1)) |> 
+  dplyr::mutate(POWER_mean_lead_2 = lead(POWER_mean, 2)) |> 
+  dplyr::mutate(POWER_mean_lead_3 = lead(POWER_mean, 3)) |> 
+  
+  # dplyr::mutate(POWER_mean_lag_1 = if_else(is.na(POWER_mean_lag_1), POWER_mean, POWER_mean_lag_1)) |> 
+  # dplyr::mutate(POWER_mean_lag_2 = if_else(is.na(POWER_mean_lag_2), POWER_mean, POWER_mean_lag_2)) |> 
+  # dplyr::mutate(POWER_mean_lag_3 = if_else(is.na(POWER_mean_lag_3), POWER_mean, POWER_mean_lag_3)) |> 
+  
+  dplyr::mutate(POWER_mean_roll_1_lag_1 = lag(POWER_mean_roll_1, 1)) |> 
+  dplyr::mutate(POWER_mean_roll_1_lag_2 = lag(POWER_mean_roll_1, 2)) |> 
+  dplyr::mutate(POWER_mean_roll_1_lag_3 = lag(POWER_mean_roll_1, 3)) |> 
+  
+  dplyr::mutate(POWER_mean_roll_5_lag_1 = lag(POWER_mean_roll_5, 1)) |> 
+  dplyr::mutate(POWER_mean_roll_5_lag_2 = lag(POWER_mean_roll_5, 2)) |> 
+  dplyr::mutate(POWER_mean_roll_5_lag_3 = lag(POWER_mean_roll_5, 3)) |> 
+  
+  dplyr::mutate(POWER_mean_roll_7_lag_1 = lag(POWER_mean_roll_7, 1)) |> 
+  dplyr::mutate(POWER_mean_roll_7_lag_2 = lag(POWER_mean_roll_7, 2)) |> 
+  dplyr::mutate(POWER_mean_roll_7_lag_3 = lag(POWER_mean_roll_7, 3)) |> 
+  glimpse()

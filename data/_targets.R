@@ -161,6 +161,23 @@ make_fit_wkflow_set <- function(wkflow_set, df_split){
                                     })) 
 }
 
+make_fit_wkflow_metrics <- function(param_recipe,
+                                    param_model,
+                                    param_df_kvf = df_kvf){
+  wkf <- 
+    workflows::workflow() |> 
+    add_recipe(recipe = param_recipe) |> 
+    add_model(spec = param_model) |> 
+    fit_resamples(param_df_kvf)
+  
+  wkf_metrics <- 
+    wkf |> 
+    collect_metrics()
+  
+  return(list(wkf, wkf_metrics))
+}
+
+
 # 3. define pipeline --------------------------------------------------------
 list(
   ## 1. ファイル名の設定 -------------------------------------------------
@@ -478,6 +495,7 @@ list(
   ),
   
   ### 2. recipe --------------
+  #### 1. base -----------------------
   tar_target(
     name = rec_base,
     command = {
@@ -521,6 +539,423 @@ list(
     command = {
       rec_base_v2_scaling |> 
         prep() |> bake(new_data = NULL)
+    }
+  ),
+  
+  #### 2. feature engineering ---------
+  ##### 1. v1 ---------------
+  #
+  # 月、曜日、週をカテゴリに
+  #
+  tar_target(
+    name = rec_v1,
+    command = {
+      rec_base |> 
+        step_mutate(
+          across(.cols = c(DATE_month, DATE_week, DATE_dow), 
+                 .fns = ~fct_relabel(as.character(.x), sort))
+        ) |> 
+        step_dummy(all_nominal_predictors())
+    }
+  ),
+  
+  ##### 2. v2 ----------------
+  #
+  # DATEごとの平均値、移動平均、ラグの値を持ったデータフレームを作成、データセットに結合させる
+  # リークの可能性があるが、テストデータにも同じ日が出現しているので問題ないと想定する
+  #
+  
+  ###### 1. データ変換 ----------
+  tar_target(
+    name = df_mean_POWER,
+    command = {
+      df_train |> 
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::group_by(DATE) |> 
+        dplyr::summarise(POWER_mean = mean(POWER)) |> 
+        dplyr::mutate(POWER_mean_roll_1 = slider::slide_vec(.x = POWER_mean,
+                                                            .f = mean,
+                                                            .before = 1,
+                                                            .after = 1)) |> 
+        dplyr::mutate(POWER_mean_roll_5 = slider::slide_vec(.x = POWER_mean,
+                                                            .f = mean,
+                                                            .before = 2,
+                                                            .after = 2)) |> 
+        dplyr::mutate(POWER_mean_roll_7 = slider::slide_vec(.x = POWER_mean,
+                                                            .f = mean,
+                                                            .before = 3,
+                                                            .after = 3)) |> 
+        dplyr::mutate(POWER_mean_lag_1 = lag(POWER_mean, 1)) |> 
+        dplyr::mutate(POWER_mean_lag_2 = lag(POWER_mean, 2)) |> 
+        dplyr::mutate(POWER_mean_lag_3 = lag(POWER_mean, 3)) |> 
+        
+        dplyr::mutate(POWER_mean_lag_1 = if_else(is.na(POWER_mean_lag_1), POWER_mean, POWER_mean_lag_1)) |>
+        dplyr::mutate(POWER_mean_lag_2 = if_else(is.na(POWER_mean_lag_2), POWER_mean, POWER_mean_lag_2)) |>
+        dplyr::mutate(POWER_mean_lag_3 = if_else(is.na(POWER_mean_lag_3), POWER_mean, POWER_mean_lag_3)) |>
+        
+        dplyr::mutate(POWER_mean_lead_1 = lead(POWER_mean, 1)) |> 
+        dplyr::mutate(POWER_mean_lead_2 = lead(POWER_mean, 2)) |> 
+        dplyr::mutate(POWER_mean_lead_3 = lead(POWER_mean, 3)) |> 
+        
+        dplyr::mutate(POWER_mean_lead_1 = if_else(is.na(POWER_mean_lead_1), POWER_mean, POWER_mean_lead_1)) |>
+        dplyr::mutate(POWER_mean_lead_2 = if_else(is.na(POWER_mean_lead_2), POWER_mean, POWER_mean_lead_2)) |>
+        dplyr::mutate(POWER_mean_lead_3 = if_else(is.na(POWER_mean_lead_3), POWER_mean, POWER_mean_lead_3)) 
+    }
+  ),
+  tar_target(
+    name = df_train_mod,
+    command = {
+      df_train |> 
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::left_join(df_mean_POWER)
+    }
+  ),
+  tar_target(
+    name = df_test_mod,
+    command = {
+      df_train |> 
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::left_join(df_mean_POWER)
+    }
+  ),
+  ###### 2. Split ----------
+  tar_target(
+    name = df_split_mod,
+    command = {
+      df_train_mod |> 
+        rsample::initial_split(prop = 3/4, strata = POWER)
+    }
+  ),
+  tar_target(
+    name = df_model_train_mod,
+    command = {
+      df_split_mod |> 
+        rsample::training()
+    }
+  ),
+  tar_target(
+    name = df_model_test_mod,
+    command = {
+      df_split_mod |> 
+        rsample::testing()
+    }
+  ),
+  tar_target(
+    name = df_kvf_mod,
+    command = {
+      df_model_train_mod |> 
+        rsample::vfold_cv(v = 10, strata = POWER)
+    }
+  ),
+  ###### 3. recipe ----------
+  tar_target(
+    name = rec_v2,
+    command = {
+      df_model_train_mod |> 
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        recipes::step_integer(DATE_month, DATE_dow) 
+    }
+  ),
+  
+  ##### 3. v3 ----------
+  #
+  # 投入する変数を検討する
+  #
+  #
+  
+  #
+  # base
+  #
+  tar_target(
+    name = rec_v3_base,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"))
+    }
+  ),
+  
+  #
+  # meanのみ
+  #
+  tar_target(
+    name = rec_v3_mean,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean
+                             )
+    }
+  ),
+  
+  #
+  # mean_roll 1のみ
+  #
+  tar_target(
+    name = rec_v3_roll_1,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_roll_1
+        )
+    }
+  ),
+  
+  #
+  # mean_roll 5のみ
+  #
+  tar_target(
+    name = rec_v3_roll_5,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_roll_5
+        )
+    }
+  ),
+  
+  #
+  # mean_roll 7のみ
+  #
+  tar_target(
+    name = rec_v3_roll_7,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_roll_7
+        )
+    }
+  ),
+  
+  #
+  # lag 1のみ
+  #
+  tar_target(
+    name = rec_v3_lag_1,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1
+        )
+    }
+  ),
+  #
+  # lag 2のみ
+  #
+  tar_target(
+    name = rec_v3_lag_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_2
+        )
+    }
+  ),
+  
+  #
+  # lag 3のみ
+  #
+  tar_target(
+    name = rec_v3_lag_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_3
+        )
+    }
+  ),
+  
+  #
+  # lag 1, 2
+  #
+  tar_target(
+    name = rec_v3_lag_1_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2
+        )
+    }
+  ),
+  
+  #
+  # lag 1, 2, 3
+  #
+  tar_target(
+    name = rec_v3_lag_1_2_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lag_3
+        )
+    }
+  ),
+  
+  #
+  # mean + lag
+  #
+  tar_target(
+    name = rec_v3_mean_lag_1,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean,
+                             POWER_mean_lag_1,
+        )
+    }
+  ),
+  
+  #
+  # mean + lag
+  #
+  tar_target(
+    name = rec_v3_mean_lag_1_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2
+        )
+    }
+  ),
+  #
+  # mean + lag
+  #
+  tar_target(
+    name = rec_v3_mean_lag_1_2_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lag_3
+        )
+    }
+  ),
+  
+  #
+  # lead
+  #
+  tar_target(
+    name = rec_v3_lead_1,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lead_1
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lead_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lead_2
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lead_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lead_3
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lead_1_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lead_1_2
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lead_1_2_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lead_1_2_3
+        )
+    }
+  ),
+  
+  #
+  # lag and lead
+  #
+  tar_target(
+    name = rec_v3_lag_1_lead_1,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1,
+                             POWER_mean_lead_1
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lag_1_2_lead_1_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_lag_1_2_3_lead_1_2_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lag_3,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             POWER_mean_lead_3
+        )
+    }
+  ),
+  
+  tar_target(
+    name = rec_v3_mean_lag_1_2_lead_1_2,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v3_mean_lag_1_2_3_lead_1_2_3,
+    command = {
+      rec_v2 |> 
+        recipes::step_select(!dplyr::matches("POWER_mean_"),
+                             POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lag_3,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             POWER_mean_lead_3
+        )
     }
   ),
   
@@ -659,7 +1094,20 @@ list(
     }
   ),
   
+  #### 3. Future engineering -----------
+  tar_target(
+    name = spec_xgb_feature_enginerring,
+    command = {
+      boost_tree(
+        mode = "regression",
+        # learn_rate = 0.1
+      ) |> 
+        set_engine("xgboost") 
+    }
+  ),
+  
   ### 4. workflow --------------
+  #### 1. スクリーニング ---------------
   tar_target(
     name = wkf_set_base,
     command = {
@@ -718,6 +1166,16 @@ list(
     }
   ),
   
+  #### 2. base by XGB -------------------------
+  tar_target(
+    name = wkf_base_xgb,
+    command = {
+      workflows::workflow() |> 
+        add_recipe(recipe = rec_base) |> 
+        add_model(spec = spec_xgb_feature_enginerring) |> 
+        fit_resamples(df_kvf)
+    }
+  ),
   
   ### 5. fit -------------------
   tar_target(
@@ -794,6 +1252,90 @@ list(
    }
   ),
   
+  ### base by xgb --------------
+  tar_target(
+    name = wkf_base_xgb_metrics,
+    command = make_fit_wkflow_metrics(param_recipe = rec_base,
+                                      param_model = spec_xgb_feature_enginerring,
+                                      param_df_kvf = df_kvf)
+  ),
+  
+  ### v1 ----------------
+  tar_target(
+    name = wkf_FE_v1,
+    command = make_fit_wkflow_metrics(param_recipe = rec_v1,
+                                      param_model = spec_xgb_feature_enginerring,
+                                      param_df_kvf = df_kvf)
+  ),
+  ### v2 ----------------
+  tar_target(
+    name = wkf_FE_v2,
+    command = make_fit_wkflow_metrics(param_recipe = rec_v2,
+                                      param_model = spec_xgb_feature_enginerring,
+                                      param_df_kvf = df_kvf_mod)
+  ),
+  ### v3 ----------------
+  tar_target(
+    name = wkf_FE_v3,
+    command = {
+      all_cores <- parallel::detectCores(logical = FALSE)
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      
+      wkf <- 
+        workflowsets::workflow_set(
+          preproc = list(
+             rec_v3_base = rec_v3_base, 
+             # rec_v1   = rec_v1,
+             rec_v2   = rec_v2,
+             rec_v3_mean = rec_v3_mean,
+             
+             rec_v3_roll_1 = rec_v3_roll_1,
+             rec_v3_roll_5 = rec_v3_roll_5,
+             rec_v3_roll_7 = rec_v3_roll_7,
+             
+             rec_v3_lag_1 = rec_v3_lag_1,
+             rec_v3_lag_2 = rec_v3_lag_2,
+             rec_v3_lag_3 = rec_v3_lag_3,
+             
+             rec_v3_lead_1 = rec_v3_lead_1,
+             rec_v3_lead_2 = rec_v3_lead_2,
+             rec_v3_lead_3 = rec_v3_lead_3,
+             
+             rec_v3_lag_1_2 = rec_v3_lag_1_2,
+             rec_v3_lag_1_2_3 = rec_v3_lag_1_2_3,
+             
+             rec_v3_mean_lag_1 = rec_v3_mean_lag_1,
+             rec_v3_mean_lag_1_2 = rec_v3_mean_lag_1_2,
+             rec_v3_mean_lag_1_2_3 = rec_v3_mean_lag_1_2_3,
+             
+             rec_v3_lag_1_lead_1 = rec_v3_lag_1_lead_1,
+             rec_v3_lag_1_2_lead_1_2 = rec_v3_lag_1_2_lead_1_2,
+             rec_v3_lag_1_2_3_lead_1_2_3 = rec_v3_lag_1_2_3_lead_1_2_3,
+             
+             rec_v3_mean_lag_1_2_lead_1_2 = rec_v3_mean_lag_1_2_lead_1_2,
+             rec_v3_mean_lag_1_2_3_lead_1_2_3 = rec_v3_mean_lag_1_2_3_lead_1_2_3 
+            ),
+          models = list(xgb_base = spec_xgb_feature_enginerring),
+          cross = TRUE
+          ) |> 
+        workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod,
+                                   metrics = yardstick::metric_set(rmse, mae, mape),
+                                   control = control_resamples(save_pred = TRUE))
+      
+      wkf_metrics <- 
+        wkf |> 
+        collect_metrics()
+      
+      stopImplicitCluster()
+      
+      return(list(wkf, wkf_metrics))
+    }
+  ),
   
   ## 6. ハイパラチューニング ----------
   ### 1. workflow ----------------
