@@ -655,8 +655,7 @@ list(
     command = {
       spec_boost_lightgbm_tune |> 
         hardhat::extract_parameter_set_dials() |> 
-        update(mtry = finalize(mtry(), 
-                               rec_base_bake))
+        update(mtry = finalize(mtry(), rec_base_bake))
     }
   ),
   
@@ -804,14 +803,15 @@ list(
       workflowsets::workflow_set(
         preproc = list(base_v1 = rec_base,
                        base_v2 = rec_base_v2_scaling), 
-        models = list(xgb      = spec_boost_xgboost_tune,
-                      lightgbm = spec_boost_lightgbm_tune,
-                      lasso    = spec_lm_glmnet_lasso_tune,
+        models = list(lasso    = spec_lm_glmnet_lasso_tune,
                       ridge    = spec_lm_glmnet_ridge_tune,
-                      elastic  = spec_lm_glmnet_elastic_tune)
+                      elastic  = spec_lm_glmnet_elastic_tune,
+                      xgb      = spec_boost_xgboost_tune#,
+                      # lightgbm = spec_boost_lightgbm_tune
+                      )
         ) |>
-        workflowsets::option_add(id = c("base_v1_xgb","base_v2_xgb"),  param_info = param_tune_xgb) |> 
-        workflowsets::option_add(id = c("base_v1_lightgbm","base_v2_lightgbm"),  param_info = param_tune_lightgbm)
+        workflowsets::option_add(id = c("base_v1_xgb","base_v2_xgb"), 
+                                 param_info = param_tune_xgb) 
     }
   ),
   
@@ -820,28 +820,55 @@ list(
     name = wkf_set_base_tune_fit,
     command = {
       
-      # all_cores <- parallel::detectCores(logical = TRUE) - 8
-      all_cores <- 10
+      all_cores <- parallel::detectCores(logical = FALSE)
       
-      doFuture::registerDoFuture()
-      cl <- parallel::makeCluster(all_cores)
-      future::plan(cluster, workers = cl)
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
       
-      wkf_set_base_tune |>
-        workflowsets::workflow_map(fn = "tune_bayes",verbose = TRUE,seed = 54147,
-                                   
+      res <- 
+        wkf_set_base_tune |>
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
                                    resamples = df_kvf,
                                    metrics = yardstick::metric_set(rmse),
-                                   iter = 50,
                                    
-                                   objective = exp_improve(),
-                                   initial = 10,
-                                   control = control_bayes(verbose = TRUE,
-                                                           verbose_iter = TRUE,
-                                                           no_improve = 10,
-                                                           
-                                                           allow_par = TRUE,
-                                                           parallel_over = "resamples"))
+                                   # fn = "tune_bayes",
+                                   # iter = 50,
+                                   # objective = exp_improve(),
+                                   # initial = 10,
+                                   # control = control_bayes(verbose = TRUE,
+                                   #                         verbose_iter = TRUE,
+                                   #                         no_improve = 20,
+                                   #                         
+                                   #                         allow_par = TRUE,
+                                   #                         parallel_over = "resamples")
+                                   
+                                   fn = "tune_grid",
+                                   grid = 20,
+                                   control = control_grid(
+                                     verbose = TRUE,
+                                     save_pred = TRUE,
+                                     allow_par = TRUE
+                                   )
+                                   )
+      stopImplicitCluster()
+      
+      return(res)
+    }
+  ),
+  ### 3. metrics ---------------
+  tar_target(
+    name = base_xgb_prediction,
+    command = {
+      wkf_set_base_tune |> 
+        extract_workflow(id = "base_v1_xgb") |> 
+        finalize_workflow(
+          wkf_set_base_tune_fit |> 
+            extract_workflow_set_result(id = "base_v1_xgb") |> 
+            select_best()
+        ) |> 
+        last_fit(df_split)
     }
   )
+  
 )

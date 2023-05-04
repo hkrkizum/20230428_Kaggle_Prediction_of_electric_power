@@ -408,6 +408,8 @@ base_lightgbd_prediction |>
   theme_bw()
 
 
+
+
 base_lightgbd_prediction |> 
   dplyr::select(-POWER) |> 
   dplyr::bind_cols(df_model_test) |> 
@@ -418,4 +420,157 @@ base_lightgbd_prediction |>
   theme_bw()
 
 
+base_xgb_prediction$.predictions[[1]] |> 
+  dplyr::mutate(residual = .pred - POWER) |> 
+  ggplot(aes(sample = residual)) +
+  geom_qq() +
+  theme_bw()
 
+base_xgb_prediction$.predictions[[1]] |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw()
+
+res <- 
+  df_model_train |> 
+  recipes::recipe(POWER ~ .) |> 
+  recipes::update_role(ID, new_role = "id variable") |> 
+  recipes::step_select(-SOT) |> 
+  
+  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+  
+  recipes::step_scale(all_numeric_predictors()) |>
+  
+  recipes::step_integer(DATE_month, DATE_dow) |> 
+  
+  recipes::step_isomap(all_outcomes(), LAT, LON, neighbors = 100) |> 
+  prep() |> 
+  bake(new_data = NULL)
+  
+  
+
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::group_by(SOT) |> 
+  dplyr::summarise(mean = mean(POWER)) |> 
+  dplyr::arrange(desc(mean)) |> 
+  dplyr::slice(1:3, 500:502, 1428:1430) |> 
+  dplyr::left_join(
+    df_model_train |> 
+      dplyr::mutate(DATE = ymd(DATE)) |>
+      dplyr::arrange(DATE)
+  ) |> 
+  ggplot(aes(x = DATE,
+             y = POWER,
+             colour = SOT)) +
+  geom_line() +
+  geom_point()
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+  dim()
+
+df_model_train |> 
+  dplyr::mutate(SOT_ID = str_extract(SOT, "[0-9]*")) |> 
+  dplyr::filter(!duplicated(SOT_ID))
+
+# データ間の距離を算出
+dist_Geo <- dist(df_model_train |> 
+                   dplyr::mutate(DATE = ymd(DATE)) |>
+                   dplyr::arrange(DATE) |> 
+                   dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+                   dplyr::select(LAT, LON), method = "euclidean")
+
+# 階層的クラスタリングの実行
+hclust_Geo <- hclust(dist_Geo, method = "ward.D2")
+# クラスタリングの結果をプロット
+plot(hclust_Geo)
+
+param_cluster <- cutree(hclust_Geo, k = 100)
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+  dplyr::mutate(Geo_Group = param_cluster) |> 
+  dplyr::mutate(Geo_Group = fct_relevel(as.character(Geo_Group), sort)) |> 
+  ggplot(aes(x = DATE, y = POWER, colour = Geo_Group)) +
+  geom_line()
+
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::group_by(SOT) |> 
+  dplyr::summarise(n = n()) |> 
+  ggplot(aes(x = n)) +
+  geom_histogram()
+
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::group_by(SOT) |> 
+  dplyr::summarise(n = n()) |> 
+  ggplot(aes(x = n)) +
+  geom_histogram()
+
+
+
+df_model_train |> 
+  dplyr::mutate(DATE = ymd(DATE)) |>
+  dplyr::arrange(DATE) |> 
+  dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+  dplyr::mutate(Geo_Group = param_cluster) |> 
+  dplyr::mutate(Geo_Group = fct_relevel(as.character(Geo_Group), sort)) |> 
+  dplyr::select(LAT, LON, Geo_Group) |> 
+  dplyr::left_join(df_model_train) |> 
+  dplyr::group_by(Geo_Group) |> 
+  dplyr::summarise(n = n()) |> 
+  ggplot(aes(x = n)) +
+  geom_histogram()
+
+df_data_number <- 
+  df_model_train |> 
+  dplyr::group_by(LAT, LON) |> 
+  dplyr::summarise(n = n()) 
+
+df_data_mean <- 
+  df_model_train |> 
+  dplyr::group_by(LAT, LON) |> 
+  dplyr::summarise(mean = mean(POWER)) 
+
+df_data_number |> 
+  dplyr::left_join(df_data_mean) |> 
+  ggplot(aes(x = n, y = mean)) +
+  geom_point()
+
+
+world_map <- rnaturalearth::ne_countries(scale = "large",
+                                         returnclass = "sf")
+world_map |> 
+  filter(name  == "China") %>% # 「東アジア」に絞る  
+  ggplot() +
+  geom_sf() +
+  geom_point(data = df_model_train |> 
+               dplyr::group_by(LAT, LON) |> 
+               dplyr::summarise(n = n()) |> 
+               dplyr::left_join(df_model_train),
+             aes(x = LON, y = LAT, colour = n), 
+             alpha = 0.4) +
+  scale_color_gradient(low = "blue", high = "red") +
+  theme_bw()
+  
+
+rec_base_bake |> glimpse()
+
+rec_base_bake |> 
+  correlation::correlation() |> 
+  summary() |> 
+  plot()

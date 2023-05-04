@@ -28,13 +28,17 @@ tar_load(
     spec_keras_base,
     wkf_tabnet_base,
     wkf_set_base_fit_metric,
+    
     wkf_tabnet_base,
     wkf_tabnet_base_metric,
     
     wkf_set_base_v2_fit_metric,
-    wkf_tabnet_base_v2,
     
-    base_lightgbd_prediction
+    wkf_tabnet_base_v2,
+    wkf_tabnet_base_v2_metric,
+    
+    base_lightgbd_prediction,
+    df_model_test
   )
 )
 ```
