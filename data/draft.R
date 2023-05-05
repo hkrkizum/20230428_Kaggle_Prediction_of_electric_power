@@ -844,12 +844,53 @@ wkf$result[[1]]$.notes[[1]]$note
 
 res <- 
   wkf_FE_tune_v1[[1]] |> 
-  extract_workflow(id = "rec_v3_lag_1_2_lead_1_2_xgb") |> 
+  extract_workflow(id = "rec_v5_mod_xgb") |> 
   finalize_workflow(
     wkf_FE_tune_v1[[1]] |> 
-      extract_workflow_set_result(id = "rec_v3_lag_1_2_lead_1_2_xgb") |>
+      extract_workflow_set_result(id = "rec_v5_mod_xgb") |>
       select_best()    
   ) |>
-  fit(df_model_train_mod)
+  fit(df_train_mod)
 
-predict(res, new_data = df_model_test_mod)
+tar_load_everything()
+
+res_lastfit <- 
+  wkf_FE_tune_v1[[1]] |> 
+  extract_workflow(id = "rec_v5_mod_xgb") |> 
+  finalize_workflow(
+    wkf_FE_tune_v1[[1]] |> 
+      extract_workflow_set_result(id = "rec_v5_mod_xgb") |>
+      select_best()    
+  ) |>
+  last_fit(df_split_mod)
+
+
+
+
+tar_meta() |> view()
+
+res
+tar_load(df_submitt)
+
+predict(res, new_data = df_model_test_mod) |> 
+  bind_cols(df_model_test_mod) |> 
+  rmse(truth = POWER, estimate = .pred)
+
+
+res_lastfit |> 
+  collect_metrics()
+
+
+tar_load(df_test_mod)
+df_test
+df_test_mod
+df_train
+
+
+
+df_submitt |> 
+  bind_cols(predict(res, new_data = df_test_mod)) |> 
+  dplyr::select(-POWER) |> 
+  dplyr::rename(POWER = 2) |> 
+  fwrite(here::here("Result", "submit.csv"))
+  

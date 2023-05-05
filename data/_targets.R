@@ -218,7 +218,7 @@ list(
     }
   ),
   tar_target(
-    name = df_submitt,
+    name = df_submit,
     command = {
       data.table::fread(in_f_submitt)
     }
@@ -613,7 +613,7 @@ list(
   tar_target(
     name = df_test_mod,
     command = {
-      df_train |> 
+      df_test |> 
         dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
         dplyr::left_join(df_mean_POWER) |> 
         dplyr::left_join(df_Geo)
@@ -1020,6 +1020,20 @@ list(
   ),
   
   tar_target(
+    name = rec_v5_lag_1_2_lead_1_2_mean,
+    command = {
+      rec_v5 |> 
+        recipes::update_role(POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor"
+        )
+    }
+  ),
+  
+  tar_target(
     name = rec_v5_mod_v4,
     command = {
       df_model_train_mod |> 
@@ -1084,7 +1098,7 @@ list(
     name = spec_keras_base,
     command = {
       mlp(
-        epochs = 100,
+        epochs = 20,
         activation = "relu",
         ) |> 
         set_mode("regression") |> 
@@ -1207,8 +1221,9 @@ list(
                        base_v2 = rec_base_v2_scaling), 
         models = list(xgb      = spec_xgb_base,
                       lightgbm = spec_lightgbm_base,
-                      lm       = spec_lm_base,
-                      nn       = spec_keras_base),
+                      lm       = spec_lm_base
+                      # nn       = spec_keras_base
+                      ),
         cross = TRUE
       ) 
     }
@@ -1422,7 +1437,9 @@ list(
              rec_v5 = rec_v5,
              rec_v5_mod = rec_v5_mod,
              
-             rec_v5_mod_v4 = rec_v5_mod_v4
+             rec_v5_mod_v4 = rec_v5_mod_v4,
+             
+             rec_v5_lag_1_2_lead_1_2_mean = rec_v5_lag_1_2_lead_1_2_mean
             ),
           models = list(xgb_base = spec_xgb_feature_enginerring),
           cross = TRUE
@@ -1449,37 +1466,37 @@ list(
   #   command = {
   #     # all_cores <- parallel::detectCores(logical = FALSE)
   #     all_cores <- 10
-  #     
+  # 
   #     library(doParallel)
   #     cl <- makePSOCKcluster(all_cores)
   #     registerDoParallel(cl)
-  #     
-  #     
-  #     wkf <- 
+  # 
+  # 
+  #     wkf <-
   #       workflowsets::workflow_set(
   #         preproc = list(
-  #           rec_v3_base = rec_v3_base, 
+  #           rec_v3_base = rec_v3_base,
   #           rec_v2   = rec_v2,
-  #           
+  # 
   #           rec_v3_mean_lag_1_2_lead_1_2 = rec_v3_mean_lag_1_2_lead_1_2,
   #           rec_v5_mod = rec_v5_mod,
-  #           
+  # 
   #         ),
   #         models = list(xgb_base = spec_xgb_feature_enginerring),
   #         cross = TRUE
-  #       ) |> 
+  #       ) |>
   #       workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
   #                                  resamples = df_kvf_mod,
   #                                  metrics = yardstick::metric_set(rmse, mae, mape),
-  #                                  control = control_resamples(save_pred = TRUE, 
+  #                                  control = control_resamples(save_pred = TRUE,
   #                                                              parallel_over ="resamples"))
-  #     
-  #     wkf_metrics <- 
-  #       wkf |> 
+  # 
+  #     wkf_metrics <-
+  #       wkf |>
   #       collect_metrics()
-  #     
+  # 
   #     doParallel::stopImplicitCluster()
-  #     
+  # 
   #     return(list(wkf, wkf_metrics))
   #   }
   # ),
@@ -1546,68 +1563,68 @@ list(
     }
   ),
   
-  # tar_target(
-  #   name = wkf_FE_tune_v1,
-  #   command = {
-  #     # all_cores <- parallel::detectCores(logical = FALSE)
-  #     all_cores <- 10
-  #     
-  #     library(doParallel)
-  #     cl <- makePSOCKcluster(all_cores)
-  #     registerDoParallel(cl)
-  #     
-  #     
-  #     wkf <- 
-  #       workflowsets::workflow_set(
-  #         preproc = list(
-  #           rec_v3_lag_1_2_lead_1_2 = rec_v3_lag_1_2_lead_1_2,
-  #           rec_v5_mod = rec_v5_mod
-  #         ),
-  #         models = list(xgb = spec_boost_xgboost_tune),
-  #         cross = TRUE
-  #       ) |> 
-  #       workflowsets::option_add(id = "rec_v3_lag_1_2_lead_1_2_xgb",
-  #                                param_info = spec_boost_xgboost_tune |> 
-  #                                  hardhat::extract_parameter_set_dials() |> 
-  #                                  update(mtry = finalize(
-  #                                    mtry(),
-  #                                    rec_v3_lag_1_2_lead_1_2 |> 
-  #                                      prep() |> bake(new_data = NULL)))
-  #                               ) |> 
-  #       workflowsets::option_add(id = "rec_v5_mod_xgb",
-  #                                param_info = spec_boost_xgboost_tune |> 
-  #                                  hardhat::extract_parameter_set_dials() |> 
-  #                                  update(mtry = finalize(
-  #                                    mtry(),
-  #                                    rec_v5_mod |> 
-  #                                      prep() |> bake(new_data = NULL)))
-  #       ) |> 
-  #       workflowsets::workflow_map(verbose = TRUE,seed = 54147,
-  #                                  resamples = df_kvf_mod,
-  #                                  metrics = yardstick::metric_set(rmse),
-  #                                  
-  #                                  fn = "tune_bayes",
-  #                                  iter = 20,
-  #                                  objective = exp_improve(),
-  #                                  initial = 20,
-  #                                  control = control_bayes(verbose = TRUE,
-  #                                                          verbose_iter = TRUE,
-  #                                                          save_pred = TRUE,
-  #                                                          no_improve = 10,
-  # 
-  #                                                          allow_par = TRUE,
-  #                                                          parallel_over = "resamples"
-  #                                  ))
-  #     
-  #     wkf_metrics <- 
-  #       wkf |> 
-  #       collect_metrics()
-  #     
-  #     doParallel::stopImplicitCluster()
-  #     
-  #     return(list(wkf, wkf_metrics))
-  #   }
-  # ),
+  tar_target(
+    name = wkf_FE_tune_v1,
+    command = {
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
+
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+
+
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v5_mod = rec_v5_lag_1_2_lead_1_2_mean,
+            rec_v3_mean_lag_1 = rec_v3_mean_lag_1
+          ),
+          models = list(xgb = spec_boost_xgboost_tune),
+          cross = TRUE
+        ) |>
+        workflowsets::option_add(id = "rec_v3_mean_lag_1_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(mtry = finalize(
+                                     mtry(),
+                                     rec_v3_mean_lag_1 |>
+                                       prep() |> bake(new_data = NULL)))
+                                ) |>
+        workflowsets::option_add(id = "rec_v5_mod_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(mtry = finalize(
+                                     mtry(),
+                                     rec_v5_lag_1_2_lead_1_2_mean |>
+                                       prep() |> bake(new_data = NULL)))
+        ) |>
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod,
+                                   metrics = yardstick::metric_set(rmse),
+
+                                   fn = "tune_bayes",
+                                   iter = 100,
+                                   objective = exp_improve(),
+                                   initial = 20,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = TRUE,
+                                                           save_pred = TRUE,
+                                                           no_improve = 20,
+
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"
+                                   ))
+
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+
+      doParallel::stopImplicitCluster()
+
+      return(list(wkf, wkf_metrics))
+    }
+  ),
   ### 3. metrics ---------------
   tar_target(
     name = base_xgb_prediction,
@@ -1621,6 +1638,55 @@ list(
         ) |> 
         last_fit(df_split)
     }
-  )
+  ),
   
+  ## 7. Submission -------------------
+  ### 1. v1 --------------
+  #### 1. validate ---------
+  tar_target(
+    name = wkf_final_v1_validate,
+    command = {
+      res_lastfit <- 
+        wkf_FE_tune_v1[[1]] |> 
+        extract_workflow(id = "rec_v5_mod_xgb") |> 
+        finalize_workflow(
+          wkf_FE_tune_v1[[1]] |> 
+            extract_workflow_set_result(id = "rec_v5_mod_xgb") |>
+            select_best()    
+        ) |>
+        last_fit(df_split_mod)
+      
+      res_lastfit_metrics <- 
+        res_lastfit |> 
+        tune::collect_metrics()
+      
+      return(list(res_lastfit, res_lastfit_metrics))
+    }
+  ),
+  
+  #### 2. Submit ---------
+  tar_target(
+   name = wkf_final_v1,
+   command = {
+     res <- 
+       wkf_FE_tune_v1[[1]] |> 
+       extract_workflow(id = "rec_v5_mod_xgb") |> 
+       finalize_workflow(
+         wkf_FE_tune_v1[[1]] |> 
+           extract_workflow_set_result(id = "rec_v5_mod_xgb") |>
+           select_best()    
+       ) |> 
+       fit(df_train_mod)
+     
+     df_result <- 
+       df_submit |> 
+       bind_cols(predict(res, new_data = df_test_mod)) |> 
+       dplyr::select(-POWER) |> 
+       dplyr::rename(POWER = 2)
+     
+     fwrite(df_result, here::here("Result", "Submit_v1.csv"))
+     
+     return(df_result)
+   }
+  )
 )
