@@ -894,3 +894,9 @@ df_submitt |>
   dplyr::rename(POWER = 2) |> 
   fwrite(here::here("Result", "submit.csv"))
   
+tar_load(wkf_final_v1_validate)
+tar_load(df_train_mod)
+
+wkf_final_v1_validate[[1]] |> 
+  extract_workflow() |> 
+  fit(df_train_mod)

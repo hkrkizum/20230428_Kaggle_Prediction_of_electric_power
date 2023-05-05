@@ -1,5 +1,5 @@
 name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
-.Random.seed|object|75fbb97792518063|||||||||||||||
+.Random.seed|object|a334ad852c01e767|||||||||||||||
 base_lightgbd_prediction|stem|ad78e41a23980323|8723796c7769e520|234efa3c9138758a|-1377699886||t19479.4872733241s|bc75b1ad8480b35f|34151|qs|local|vector|||0.001||
 base_xgb_prediction|stem|2d0937edf4e5c7e2|9cb5c03571d67a34|79b180ef8297b3a1|1911808406||t19481.5976786092s|b36669895a8b4004|6275037|qs|local|vector|||25.745||
 convert_df_num_to_factor|function|35bdda075bd835b8|||||||||||||||
@@ -15,6 +15,7 @@ df_model_train|stem|c064f4d3df231e78|5e2f3e592eab6a7b|6f58e535a5276e3b|552146536
 df_model_train_mod|stem|b5beec7a10c7835d|d8fbaa7882f0afd9|0f3b97f033cd073e|1901076980||t19481.4660181106s|8d44957c8dda44ec|1280892|qs|local|vector|||0.002||
 df_split|stem|bab12fe20b8ad2aa|6d9eb98fe7f928e1|e2e87ce685e43266|-1175182508||t19478.6043175985s|e5fd02ee05f7e4b3|1001165|qs|local|vector|||0.036||
 df_split_mod|stem|588d47007c7d46f0|fed0346c608105d5|a3420b14c3f89972|1155266883||t19481.4660174162s|786d528f0e00546d|1682786|qs|local|vector|||0.029||
+df_submit|stem|5e90f065716af8b1|47de268cc90ed10d|0318937d0d17d827|-629963233||t19482.0973276135s|b0cf0699b1259f5f|522|qs|local|vector|||0.002||
 df_submitt|stem|5e90f065716af8b1|47de268cc90ed10d|0318937d0d17d827|1741862167||t19478.6043163253s|b0cf0699b1259f5f|522|qs|local|vector|||0.001||
 df_test|stem|af19eab19a130f47|282942ac18cf3d12|894cbbe470fb8635|1959317612||t19478.6043166726s|a2f4bb84a5cb2628|319292|qs|local|vector|||0.003||
 df_test_mod|stem|11df6af765c640bc|5c348fe96aa8cb4e|a854efd40889fe6f|-1552065832||t19481.9643002557s|91f46f660a011b20|550265|qs|local|vector|||0.059||
@@ -101,6 +102,8 @@ wkf_FE_v1|stem|69bc824a314ded35|68959b0be893dd25|c2497ea5974878a8|-315086412||t1
 wkf_FE_v2|stem|1d3c1c891fe6e4db|e01f957ee0ed5a29|3f0f00adf9d4012d|-764742634||t19481.3543812296s||12772796|qs|local|vector|||1.822|All models failed. Run show_notes.Last.tune.result for more information.|All models failed. Run show_notes.Last.tune.result for more information.
 wkf_FE_v3|stem|520a86805a76d133|39d818da298b55bc|17e867b9f1877b5a|2054603823||t19481.6086532389s|cc183334d3126cf1|762342494|qs|local|vector|||118.273||
 wkf_FE_v4|stem|b613b9cf13ec58bd|feb9f10fdf7f7160|7fd027aa2fabea3f|1756111002||t19481.3885993225s|fa4a0622fa05bfee|12772794|qs|local|vector|||4.656||
+wkf_final_v1|stem|178f30eaf303fba7|fc6671d0696a718a|b3d1adcb0cca3cb7|-1690518046||t19482.0979835423s|2c43686d07ab2074|12068|qs|local|vector|||49.354||
+wkf_final_v1_validate|stem|7f5f12e9881ff4c2|b4ed3ec920cfdef4|2dceab5e7bb01f30|-87511449||t19482.0984205961s|0d4a3d96d2943054|8700918|qs|local|vector|||37.676||
 wkf_set_base|stem|1af776560b947bec|d95ee5dd8434b915|9e9cc006c69a15f3|-264293521||t19481.5904154541s|f0bbffdc5d90138e|6084969|qs|local|vector|||0.032||
 wkf_set_base_fit|stem|69929e2e0af236de|abbed027d9f8de16|3ac85dd4fc4ede97|1703395565||t19481.5909678855s|5b5e5e5a7717cae7|98763241|qs|local|vector|||47.178||
 wkf_set_base_fit_metric|stem|b544588b043bc71b|59e811327bc8e20b|3d8845db7e059280|-237125829||t19481.590971242s|df97ea100f51fa1c|517|qs|local|vector|||0.129||
@@ -113,14 +116,3 @@ wkf_tabnet_base|stem|e80be97445466cbc|0f3ea1b3f803ec2f|d961df50088fd5e2|20082406
 wkf_tabnet_base_metric|stem|4e51f6bf77ce1c97|c0d665b08ff18cf7|fcdd1e622f3cc98f|1328707452||t19478.6151939161s||186|qs|local|vector|||4.094||object wkf_tabnet_base not found
 wkf_tabnet_base_v2|stem|79d4d3e1729cd214|dd67e966461e695a|aaa26fdab5ed31b8|543788657||t19478.615139632s|494d08946aefa2fe|11656653|qs|local|vector|||420.156||
 wkf_tabnet_base_v2_metric|stem|3cd0020e7271466a|f1d86a44e158de09|9b35190241793ad3|-1606340623||t19478.6151939161s|dd56a5971d025bfa|192|qs|local|vector|||0||
-make_gg_corr_single_Continuous|function|36fab5dd35a5ce0e
-make_fit_wkflow_set|function|8f5db54f1dcbf4a8
-make_gg_single_Continuous|function|2615fba1fca8f192
-make_fit_wkflow_metrics|function|4c9145bca205cf4c
-.Random.seed|object|a334ad852c01e767
-make_gg_single_Categoly|function|910bb6b0a2475f3f
-convert_df_num_to_factor|function|35bdda075bd835b8
-make_finalized_wkflow_set|function|fdcc8e587e992f4a
-make_gg_hist_single_Continuous|function|a52f760058f5d7ba
-make_gg_single_Continuous_input_vec|function|d438e988ac451381
-df_submit|stem|5e90f065716af8b1|47de268cc90ed10d|0318937d0d17d827|-629963233||t19482.0973276135s|b0cf0699b1259f5f|522|qs|local|vector|||0.002||

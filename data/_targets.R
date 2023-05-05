@@ -1669,13 +1669,8 @@ list(
    name = wkf_final_v1,
    command = {
      res <- 
-       wkf_FE_tune_v1[[1]] |> 
-       extract_workflow(id = "rec_v5_mod_xgb") |> 
-       finalize_workflow(
-         wkf_FE_tune_v1[[1]] |> 
-           extract_workflow_set_result(id = "rec_v5_mod_xgb") |>
-           select_best()    
-       ) |> 
+       wkf_final_v1_validate[[1]] |> 
+       extract_workflow() |> 
        fit(df_train_mod)
      
      df_result <- 
