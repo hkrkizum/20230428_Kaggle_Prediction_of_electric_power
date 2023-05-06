@@ -900,3 +900,225 @@ tar_load(df_train_mod)
 wkf_final_v1_validate[[1]] |> 
   extract_workflow() |> 
   fit(df_train_mod)
+
+# -------------------------------
+df_final_recipe <- 
+  wkf_final_v1_validate[[1]] |> 
+  extract_preprocessor() |> 
+  prep() |> bake(new_data = NULL, all_predictors(), all_outcomes())
+
+df_final_recipe |> 
+  ggplot(aes(x = POWER_mean)) +
+  geom_histogram()
+
+df_final_recipe |> 
+  ggplot(aes(x = POWER_mean)) +
+  geom_histogram(aes(y=after_stat(density))) +
+  geom_density() +
+  scale_x_log10()
+  
+tar_meta() |> View()
+
+df_final_recipe |> glimpse()
+  
+wkf_final_v1_validate[[1]] |> 
+  collect_predictions() |> 
+  dplyr::mutate(residual = .pred - POWER) |> 
+  ggplot(aes(sample = residual)) +
+  stat_qq_line(color="Red") +
+  geom_qq() +
+  theme_bw()
+
+
+wkf_final_v1_validate[[1]] |> 
+  collect_predictions() |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(colour = "blue", alpha = 0.4) +
+  theme_bw()
+
+wkf_final_v1_validate[[1]] |> 
+  collect_predictions() |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_point(colour = "blue", alpha = 0.4) +
+  scale_x_log10() +
+  scale_y_log10() +
+  theme_bw()
+
+  
+wkf_final_v1_validate_and_prediction_rec_v7_v8_xgb[[1]] |> 
+  collect_predictions() |> 
+  dplyr::select(-POWER) |> 
+  bind_cols(df_model_test_mod) |> 
+  dplyr::mutate(DATE = ymd(DATE)) |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_line() +
+  geom_line(aes(x = DATE, y = .pred), colour = "red") +
+  theme_bw()
+
+tmp <- 
+  wkf_final_v1_validate_and_prediction_rec_v7_v8_xgb[[1]] |> 
+  extract_fit_parsnip() 
+
+tmp$fit |> 
+  glimpse()
+
+vi <- xgboost::xgb.importance(model = tmp$fit)
+vi
+xgboost::xgb.ggplot.importance(vi)
+
+tar_load(df_model_train)
+
+df_model_train |> 
+  recipes::recipe(POWER ~ .) |> 
+  recipes::update_role(ID,SOT, new_role = "id variable") |> 
+  
+  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+  
+  recipes::step_scale(all_numeric_predictors()) |> 
+  recipes::step_integer(DATE_month, DATE_dow) |> 
+  prep() |> 
+  bake(new_data = NULL) |> 
+  glimpse()
+
+rec_v5_lag_1_2_lead_1_2_mean |> 
+  prep() |> 
+  summary() |> 
+  print(n = 100)
+
+tmp <- 
+  rec_v5_lag_1_2_lead_1_2_mean |> 
+  recipes::step_spline_natural(DATE_doy, deg_free = 60, keep_original_cols = TRUE) |> 
+  prep() |> 
+  bake(new_data = NULL)
+
+tmp |> 
+  dplyr::select(DATE_doy, dplyr::matches("DATE_doy_")) |> 
+  tidyr::pivot_longer(cols = -DATE_doy,
+                      names_to = "param", values_to = "val") |> 
+  ggplot(aes(x = DATE_doy,
+             y = val,
+             colour = param)) +
+  geom_line()
+
+
+make_fit_wkflow_validate_and_prediction <- function(obj_wkf, 
+                                                    param_id,
+                                                    obj_split,
+                                                    obj_train,
+                                                    obj_test,
+                                                    obj_submit){
+  res_lastfit <- 
+    obj_wkf[[1]] |> 
+    extract_workflow(id = param_id) |> 
+    finalize_workflow(
+      obj_wkf[[1]] |> 
+        extract_workflow_set_result(id = param_id) |>
+        select_best()    
+    ) |>
+    last_fit(obj_split)
+  
+  res_lastfit_metrics <- 
+    res_lastfit |> 
+    tune::collect_metrics()
+  
+  res <- 
+    res_lastfit |> 
+    extract_workflow() |> 
+    fit(obj_train)
+  
+  df_result <- 
+    obj_submit |> 
+    bind_cols(predict(res, new_data = obj_test)) |> 
+    dplyr::select(-POWER) |> 
+    dplyr::rename(POWER = 2)
+  
+  return(
+    list(
+      res_lastfit,
+      res_lastfit_metrics,
+      res,
+      df_result
+      )
+    )
+}
+
+res_lastfit <- 
+  wkf_FE_tune_v1[[1]] |> 
+  extract_workflow(id = "rec_v7_v8_xgb") |> 
+  finalize_workflow(
+    wkf_FE_tune_v1[[1]] |> 
+      extract_workflow_set_result(id = "rec_v7_v8_xgb") |>
+      select_best()    
+  ) |>
+  last_fit(df_split_mod)
+
+res_lastfit_metrics <- 
+  res_lastfit |> 
+  tune::collect_metrics()
+
+
+df_train |> 
+  dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+  dplyr::group_by(DATE) |> 
+  
+  dplyr::summarise(across(.cols = c(POWER, V_1),
+                          .fns = list(mean = mean),
+                          .names = "{.col}_{.fn}"),
+                   .groups = "drop") |> 
+  dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                       .fns = function(x){
+                         res <- lead(x, 1)
+                         res[length(x)] <- x[length(x)]
+                         return(res)
+                       },
+                       .names = "{.col}_lead_1")) |> 
+  dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                       .fns = function(x){
+                         res <- lead(x, 2)
+                         res[(length(x)-1):length(x)] <- x[(length(x)-1):length(x)] |> mean()
+                         return(res)
+                       },
+                       .names = "{.col}_lead_2")) |> 
+  dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                       .fns = function(x){
+                         res <- lead(x, 3)
+                         res[(length(x)-2):length(x)] <- x[(length(x)-2):length(x)] |> mean()
+                         return(res)
+                       },
+                       .names = "{.col}_lead_3")) |> 
+  dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                       .fns = function(x){
+                         res <- lead(x, 4)
+                         res[(length(x)-3):length(x)] <- x[(length(x)-3):length(x)] |> mean()
+                         return(res)
+                       },
+                       .names = "{.col}_lead_4")) |> 
+  dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                       .fns = function(x){
+                         res <- lead(x, 5)
+                         res[(length(x)-4):length(x)] <- x[(length(x)-4):length(x)] |> mean()
+                         return(res)
+                       },
+                       .names = "{.col}_lead_5")) |> 
+  dplyr::slice(1,2, 360:364) |> View()
+
+
+
+
+# Plot screening ------------
+tar_load(wkf_FE_v3)
+wkf_FE_v3[[1]] |> 
+  autoplot(metric = "rmse") +
+  geom_text(aes(label = wflow_id), nudge_x = 0.5) +
+  coord_flip() +
+  facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
+
+tar_load(wkf_FE_v4)
+wkf_FE_v4[[1]] |> 
+  autoplot(metric = "rmse") +
+  geom_text(aes(label = wflow_id), nudge_x = 0.5) +
+  coord_flip() +
+  facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)

@@ -2,3 +2,5 @@ data/.Rproj.user/
 data/Result
 data/.quarto/
 data/*_files/
+jupyter.log
+catboost_info/
