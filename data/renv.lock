@@ -765,22 +765,6 @@
       ],
       "Hash": "8b708f296afd9ae69f450f9640be8990"
     },
-    "doFuture": {
-      "Package": "doFuture",
-      "Version": "1.0.0",
-      "Source": "Repository",
-      "Repository": "RSPM",
-      "Requirements": [
-        "foreach",
-        "future",
-        "future.apply",
-        "globals",
-        "iterators",
-        "parallel",
-        "utils"
-      ],
-      "Hash": "63814885cac13142d0af0bbb629d6521"
-    },
     "doParallel": {
       "Package": "doParallel",
       "Version": "1.0.17",

@@ -42,7 +42,9 @@ tar_option_set(
                "rnaturalearth",
                "rnaturalearthdata",
                "rnaturalearthhires",
-               "rgeos"),
+               "rgeos",
+               "geosphere"
+               ),
   format = "qs",
   seed = 54147
 )
@@ -1043,9 +1045,10 @@ list(
     name = rec_v5,
     command = {
       rec_v3_base |> 
-        recipes::update_role(dplyr::matches("Geo_Group_"),
-                             new_role = "predictor"
-        )
+        # recipes::update_role(dplyr::matches("Geo_Group_"),
+        #                      new_role = "predictor"
+        # )
+        recipes::step_rm(dplyr::matches("Geo_Group_"))
     }
   ),
   
@@ -1222,16 +1225,25 @@ list(
         dplyr::mutate(Geo_Group = param_cluster) 
       
       
-      df_EDA |> 
+      res <- 
+        df_EDA |> 
         dplyr::filter(dataset == "train") |> 
         dplyr::left_join(df_Geo) |> 
-        dplyr::group_by(LAT,LON,Geo_Group) |> 
-        dplyr::summarise(across(.cols = c(POWER, V_1, V_2, V_3),
+        dplyr::group_by(Geo_Group) |> 
+        dplyr::mutate(across(.cols = c(POWER, V_1, V_2, V_3),
                                 .fns = list(mean = mean,
+                                            median = median,
                                             sd = sd,
-                                            )))
-      
-      return(df_Geo)
+                                            min = min,
+                                            max = max
+                                            ),
+                                .names = "Geo_by_{.col}_{.fn}")) |> 
+        dplyr::ungroup() |> 
+        dplyr::filter(!duplicated(cbind(LAT,LON))) |> 
+        dplyr::select(LAT,LON, Geo_Group,
+                      dplyr::matches("Geo_by_.*_.*"))
+        
+      return(res)
     }
   ),
   tar_target(
@@ -1339,7 +1351,7 @@ list(
       df_train |> 
         dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
         dplyr::left_join(df_lag_feature) |> 
-        dplyr::left_join(df_Geo)
+        dplyr::left_join(df_Geo_target)
     }
   ),
   tar_target(
@@ -1348,7 +1360,7 @@ list(
       df_test |> 
         dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
         dplyr::left_join(df_lag_feature) |> 
-        dplyr::left_join(df_Geo)
+        dplyr::left_join(df_Geo_target)
     }
   ),
   tar_target(
@@ -1380,6 +1392,7 @@ list(
     }
   ),
   ###### 3. recipe ----------
+  
   ####### 1. v9 base ---------
   tar_target(
     name = rec_v9_base,
@@ -1393,14 +1406,21 @@ list(
         recipes::update_role(SOT, new_role = "id variable") |> 
         
         recipes::update_role(
-          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]"), new_role = "non-use variable"
+          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]|V_1_mean|POWER_mean"), new_role = "non-use variable"
         ) |> 
         
-        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
-        recipes::step_dummy(Geo_Group) |> 
         recipes::update_role(
-          dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+          dplyr::matches("^Geo_by_"), new_role = "non-use variable"
         ) |> 
+        
+        recipes::update_role(
+          dplyr::matches("Geo_Group"), new_role = "non-use variable"
+        ) |> 
+        # recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        # recipes::step_dummy(Geo_Group) |> 
+        # recipes::update_role(
+        #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+        # ) |> 
         
         recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
         recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
@@ -1423,7 +1443,7 @@ list(
   ),
   
   
-  ####### 1. v9 on-hot week, month ---------
+  ####### 2. v9 on-hot week, month ---------
   tar_target(
     name = rec_v9_on_hot_week_month,
     command = {
@@ -1436,14 +1456,21 @@ list(
         recipes::update_role(SOT, new_role = "id variable") |> 
         
         recipes::update_role(
-          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]"), new_role = "non-use variable"
-        ) |> 
+          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]|V_1_mean|POWER_mean"), new_role = "non-use variable"
+        ) |>
         
-        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
-        recipes::step_dummy(Geo_Group) |> 
         recipes::update_role(
-          dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+          dplyr::matches("^Geo_by_"), new_role = "non-use variable"
+        ) |>
+        
+        recipes::update_role(
+          dplyr::matches("Geo_Group"), new_role = "non-use variable"
         ) |> 
+        # recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        # recipes::step_dummy(Geo_Group) |> 
+        # recipes::update_role(
+        #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+        # ) |> 
         
         recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
         recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
@@ -1464,7 +1491,7 @@ list(
     }
   ),
   
-  ####### 1. v9 full ---------
+  ####### 3. v9 full ---------
   tar_target(
     name = rec_v9_full,
     command = {
@@ -1477,8 +1504,12 @@ list(
         recipes::update_role(SOT, new_role = "id variable") |> 
         
         recipes::update_role(
-          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]"), new_role = "non-use variable"
+          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]|POWER_mean"), new_role = "non-use variable"
         ) |> 
+        
+        recipes::update_role(
+          dplyr::matches("^Geo_by_"), new_role = "non-use variable"
+        ) |>
         
         #
         # v5 Geometric
@@ -1520,6 +1551,821 @@ list(
         recipes::step_spline_natural(DATE_doy, deg_free = 60, keep_original_cols = TRUE)
     }
   ),
+  
+  ####### 4. v9 - Geo not-on-hot ---------
+  tar_target(
+    name = rec_v9_Geo_num,
+    command = {
+      df_train_mod_v2 |> 
+        # 
+        # base
+        #
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        
+        recipes::update_role(
+          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]|POWER_mean"), new_role = "non-use variable"
+        ) |> 
+        
+        recipes::update_role(
+          dplyr::matches("^Geo_by_"), new_role = "non-use variable"
+        ) |>
+        
+        #
+        # v5 Geometric
+        #
+        # recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        # recipes::step_dummy(Geo_Group) |> 
+        # recipes::update_role(
+        #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+        # ) |> 
+        
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        
+        #
+        # v7 Weekday, season
+        #
+        recipes::step_mutate(iswweekday = dplyr::if_else(
+          DATE_dow %in% c("Sun", "Sat"),
+          0, 1)) |>
+        
+        recipes::step_mutate(spring = dplyr::if_else(DATE_month %in% c("Mar","Apr","May"), 1, 0)) |>
+        recipes::step_mutate(summer = dplyr::if_else(DATE_month %in% c("Jun","Jul","Aug"), 1, 0)) |>
+        recipes::step_mutate(fall = dplyr::if_else(DATE_month %in% c("Sep","Oct","Nov"), 1, 0)) |>
+        recipes::step_mutate(winter = dplyr::if_else(DATE_month %in% c("Dec","Jan","Feb"), 1, 0)) |>
+        
+        recipes::step_dummy(DATE_month, DATE_dow) |> 
+        #
+        # v4 target encoding
+        #
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor") |> 
+        #
+        # v8 Spline
+        #
+        recipes::step_spline_natural(DATE_doy, deg_free = 60, keep_original_cols = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v9_wo_spline,
+    command = {
+      rec_v9_full |> 
+        recipes::step_rm(dplyr::matches("^DATE_doy_.*"))
+    }
+  ),
+  
+  tar_target(
+    name = rec_v9_spline_54,
+    command = {
+      rec_v9_wo_spline |> 
+        #
+        # v8 Spline
+        #
+        recipes::step_spline_natural(DATE_doy, deg_free = 54, keep_original_cols = TRUE)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v9_spline_26,
+    command = {
+      rec_v9_wo_spline |> 
+        #
+        # v8 Spline
+        #
+        recipes::step_spline_natural(DATE_doy, deg_free = 26, keep_original_cols = TRUE)
+    }
+  ),
+  tar_target(
+    name = rec_v9_spline_120,
+    command = {
+      df_train_mod_v2 |> 
+        # 
+        # base
+        #
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        
+        recipes::update_role(
+          dplyr::matches("_mean_lag_[0-9]|_mean_lead_[0-9]|POWER_mean"), new_role = "non-use variable"
+        ) |>
+        
+        recipes::update_role(
+          dplyr::matches("^Geo_by_"), new_role = "non-use variable"
+        ) |>
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        recipes::step_dummy(Geo_Group) |> 
+        # recipes::update_role(
+        #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+        # ) |> 
+        
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        
+        #
+        # v7 Weekday, season
+        #
+        recipes::step_mutate(iswweekday = dplyr::if_else(
+          DATE_dow %in% c("Sun", "Sat"),
+          0, 1)) |>
+        
+        recipes::step_mutate(spring = dplyr::if_else(DATE_month %in% c("Mar","Apr","May"), 1, 0)) |>
+        recipes::step_mutate(summer = dplyr::if_else(DATE_month %in% c("Jun","Jul","Aug"), 1, 0)) |>
+        recipes::step_mutate(fall = dplyr::if_else(DATE_month %in% c("Sep","Oct","Nov"), 1, 0)) |>
+        recipes::step_mutate(winter = dplyr::if_else(DATE_month %in% c("Dec","Jan","Feb"), 1, 0)) |>
+        
+        recipes::step_dummy(DATE_month, DATE_dow) |> 
+        #
+        # v4 target encoding
+        #
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor") |> 
+        #
+        # v8 Spline
+        #
+        recipes::step_spline_natural(DATE_doy, deg_free = 120, keep_original_cols = TRUE)
+    }
+  ),
+  
+  ####### 5. v10 - add V_1 lag ---------
+  tar_target(
+    name = rec_v10_V_1_mean,
+    command = {
+      rec_v9_full |> 
+        recipes::update_role(V_1_mean, new_role = "predictor")
+    }
+  ),
+  
+  tar_target(
+    name = rec_v10_V_1_mean_lag_1_2_lead_1_2,
+    command = {
+      rec_v9_full |> 
+        recipes::update_role(V_1_mean,
+                             V_1_mean_lag_1,
+                             V_1_mean_lag_2,
+                             V_1_mean_lead_1,
+                             V_1_mean_lead_2,
+                             new_role = "predictor")
+    }
+  ),
+  
+  ###### 6. v11 add Geo_by_target -------------------------
+  tar_target(
+    name = rec_v11_Geo_by_POWER_stats,
+    command = {
+      rec_v9_spline_120 |> 
+        # recipes::update_role(V_1_mean,
+        #                      new_role = "predictor") |> 
+        recipes::update_role(Geo_by_POWER_mean, Geo_by_POWER_sd, Geo_by_POWER_min, Geo_by_POWER_max,
+                             new_role = "predictor")
+    }
+  ),
+  
+  
+  ##### 10. v12 -------------------------
+  ###### 1. データ変換 ----------
+  tar_target(
+    name = df_Geo_target_v2,
+    command = {
+      # データ間の距離を算出
+      dist_Geo <- dist(df_EDA |> 
+                         dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+                         dplyr::select(LAT, LON), method = "euclidean")
+      
+      # 階層的クラスタリングの実行
+      hclust_Geo <- hclust(dist_Geo, method = "ward.D2")
+      # クラスタリングの結果をプロット
+      # plot(hclust_Geo)
+      
+      param_cluster <- cutree(hclust_Geo, k = 10)
+      
+      # param_cluster
+      
+      df_Geo <- df_EDA |> 
+        dplyr::filter(!duplicated(cbind(LAT, LON))) |> 
+        dplyr::select(LAT, LON) |> 
+        dplyr::mutate(Geo_Group = param_cluster) |> 
+        rowwise() |> 
+        dplyr::mutate(dist_shanghai = distGeo(c(121.4737, 31.2304), c(LON, LAT))) |> 
+        dplyr::mutate(dist_shanghai = log10(dist_shanghai)) |> 
+        dplyr::group_by()
+      
+      
+      # res <- 
+      #   df_EDA |> 
+      #   dplyr::filter(dataset == "train") |> 
+      #   dplyr::left_join(df_Geo) |> 
+      #   dplyr::group_by(Geo_Group) |> 
+      #   dplyr::mutate(across(.cols = c(POWER, V_1, V_2, V_3),
+      #                        .fns = list(mean = mean,
+      #                                    median = median,
+      #                                    sd = sd,
+      #                                    min = min,
+      #                                    max = max
+      #                        ),
+      #                        .names = "Geo_by_{.col}_{.fn}")) |> 
+      #   dplyr::ungroup() |> 
+      #   dplyr::filter(!duplicated(cbind(LAT,LON))) |> 
+      #   rowwise() |> 
+      #   dplyr::mutate(dist_shanghai = distGeo(c(121.4737, 31.2304), c(LON, LAT))) |> 
+      #   dplyr::mutate(dist_shanghai = log10(dist_shanghai)) |> 
+      #   dplyr::group_by() |> 
+      #   dplyr::select(LAT,LON, Geo_Group, dist_shanghai,
+      #                 dplyr::matches("Geo_by_.*_.*"))
+      
+      return(df_Geo)
+    }
+  ),
+  tar_target(
+    name = df_lag_feature_v2_POWER,
+    command = {
+      df_train |> 
+        dplyr::mutate(POWER_log10 = log10(POWER)) |> 
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::group_by(DATE) |> 
+        
+        dplyr::summarise(across(.cols = c(POWER, POWER_log10),
+                                .fns = list(mean = mean),
+                                .names = "{.col}_{.fn}"),
+                         .groups = "drop") |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 1)
+                               res[1] <- x[1]
+                               return(res)
+                             },
+                             .names = "{.col}_lag_1")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 2)
+                               res[1:2] <- x[1:2] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_2")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 3)
+                               res[1:3] <- x[1:3] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_3")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 4)
+                               res[1:4] <- x[1:4] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_4")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 5)
+                               res[1:5] <- x[1:5] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_5")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 1)
+                               res[length(x)] <- x[length(x)]
+                               return(res)
+                             },
+                             .names = "{.col}_lead_1")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 1)
+                               res[length(x)] <- x[length(x)]
+                               return(res)
+                             },
+                             .names = "{.col}_lead_1")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 2)
+                               res[(length(x)-1):length(x)] <- x[(length(x)-1):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_2")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 3)
+                               res[(length(x)-2):length(x)] <- x[(length(x)-2):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_3")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 4)
+                               res[(length(x)-3):length(x)] <- x[(length(x)-3):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_4")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 5)
+                               res[(length(x)-4):length(x)] <- x[(length(x)-4):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_5"))
+      
+    }
+  ),
+  
+  tar_target(
+    name = df_lag_feature_v2_Predictor,
+    command = {
+      df_EDA |> 
+        dplyr::mutate(across(.cols = dplyr::matches("^V_[0-9]{1,2}"),
+                             .fns = list(log10 = ~log10(.x + 10)),
+                             .names = "{.col}_{.fn}")) |> 
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |> 
+        dplyr::group_by(DATE) |> 
+        
+        dplyr::summarise(across(.cols = dplyr::matches("^V_[0-9]{1,2}$|^V_[0-9]{1,2}_log10$"),
+                                .fns = list(mean = mean),
+                                .names = "{.col}_{.fn}"),
+                         .groups = "drop") |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 1)
+                               res[1] <- x[1]
+                               return(res)
+                             },
+                             .names = "{.col}_lag_1")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 2)
+                               res[1:2] <- x[1:2] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_2")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 3)
+                               res[1:3] <- x[1:3] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_3")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 4)
+                               res[1:4] <- x[1:4] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_4")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lag(x, 5)
+                               res[1:5] <- x[1:5] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lag_5")) |> 
+        
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 1)
+                               res[length(x)] <- x[length(x)]
+                               return(res)
+                             },
+                             .names = "{.col}_lead_1")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 1)
+                               res[length(x)] <- x[length(x)]
+                               return(res)
+                             },
+                             .names = "{.col}_lead_1")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 2)
+                               res[(length(x)-1):length(x)] <- x[(length(x)-1):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_2")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 3)
+                               res[(length(x)-2):length(x)] <- x[(length(x)-2):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_3")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 4)
+                               res[(length(x)-3):length(x)] <- x[(length(x)-3):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_4")) |> 
+        dplyr::mutate(across(.cols = dplyr::matches("_mean$"),
+                             .fns = function(x){
+                               res <- lead(x, 5)
+                               res[(length(x)-4):length(x)] <- x[(length(x)-4):length(x)] |> mean()
+                               return(res)
+                             },
+                             .names = "{.col}_lead_5"))
+      
+    }
+  ),
+  
+  ###### 2. Split ----------
+  tar_target(
+    name = df_train_mod_v3,
+    command = {
+      df_train |>
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |>
+        dplyr::left_join(df_Geo_target_v2) |>
+        dplyr::left_join(df_lag_feature_v2_POWER) |> 
+        dplyr::left_join(df_lag_feature_v2_Predictor)
+    }
+  ),
+  tar_target(
+    name = df_test_mod_v3,
+    command = {
+      df_test |>
+        dplyr::mutate(DATE = ymd(DATE, tz = "Asia/Tokyo")) |>
+        dplyr::left_join(df_Geo_target_v2) |>
+        dplyr::left_join(df_lag_feature_v2_POWER) |> 
+        dplyr::left_join(df_lag_feature_v2_Predictor)
+    }
+  ),
+  tar_target(
+    name = df_split_mod_v3,
+    command = {
+      df_train_mod_v3 |>
+        rsample::initial_split(prop = 3/4, strata = DATE)
+    }
+  ),
+  tar_target(
+    name = df_model_train_mod_v3,
+    command = {
+      df_split_mod_v3 |>
+        rsample::training()
+    }
+  ),
+  tar_target(
+    name = df_model_test_mod_v3,
+    command = {
+      df_split_mod_v3 |>
+        rsample::testing()
+    }
+  ),
+  tar_target(
+    name = df_kvf_mod_v3,
+    command = {
+      df_model_train_mod_v3 |>
+        rsample::vfold_cv(v = 10, strata = POWER)
+    }
+  ),
+  ###### 3. recipe ----------
+  ####### 1. v12 ----------------
+  tar_target(
+    name = rec_v12_base,
+    command = {
+      df_train_mod_v3 |> 
+        # 
+        # base
+        #
+        recipes::recipe(POWER ~ .) |> 
+        recipes::update_role(ID, new_role = "id variable") |> 
+        recipes::update_role(SOT, new_role = "id variable") |> 
+        
+        #
+        # exclude mean and lag feature
+        #
+        recipes::update_role(
+          dplyr::matches("_mean_lag_[0-9]$|_mean_lead_[0-9]$|_mean$"), new_role = "non-use variable"
+        ) |> 
+        
+        #
+        # exclude dist from shanghai
+        #
+        recipes::update_role(
+          dplyr::matches("dist_shanghai"), new_role = "non-use variable"
+        ) |>
+        
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(
+          dplyr::matches("Geo_Group"), new_role = "non-use variable"
+        ) |>
+        # recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+        # recipes::step_dummy(Geo_Group) |> 
+        # recipes::update_role(
+        #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+        # ) |>
+        
+        recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+        recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+        
+        #
+        # v7 Weekday, season
+        #
+        recipes::step_mutate(iswweekday = dplyr::if_else(
+          DATE_dow %in% c("Sun", "Sat"),
+          0, 1)) |>
+        
+        recipes::step_mutate(spring = dplyr::if_else(DATE_month %in% c("Mar","Apr","May"), 1, 0)) |>
+        recipes::step_mutate(summer = dplyr::if_else(DATE_month %in% c("Jun","Jul","Aug"), 1, 0)) |>
+        recipes::step_mutate(fall = dplyr::if_else(DATE_month %in% c("Sep","Oct","Nov"), 1, 0)) |>
+        recipes::step_mutate(winter = dplyr::if_else(DATE_month %in% c("Dec","Jan","Feb"), 1, 0)) |>
+        
+        recipes::step_dummy(DATE_month, DATE_dow)
+        #
+        # v4 target encoding
+        #
+        # recipes::update_role(POWER_mean,
+        #                      POWER_mean_lag_1,
+        #                      POWER_mean_lag_2,
+        #                      POWER_mean_lead_1,
+        #                      POWER_mean_lead_2,
+        #                      new_role = "predictor") |> 
+        #
+        # v8 Spline
+        #
+        # recipes::step_spline_natural(DATE_doy, deg_free = 60, keep_original_cols = TRUE)
+    }
+  ),
+  
+  ####### 2. v12 - add geo ----------------
+  tar_target(
+    name = rec_v12_add_geo,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group)
+        
+    }
+  ),
+  
+  ####### 2. v12 - add dist_shangha ----------------
+  tar_target(
+    name = rec_v12_add_dist_shanghai,
+    command = {
+      rec_v12_add_geo |> 
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(
+          dplyr::matches("dist_shanghai"), new_role = "predictor"
+        ) 
+      
+    }
+  ),
+  
+  ####### 2. v12 - add mean, lag ----------------
+  tar_target(
+    name = rec_v12_mean_lag_normal,
+    command = {
+      rec_v12_add_geo |> 
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             new_role = "predictor")
+      
+    }
+  ),
+  
+  tar_target(
+    name = rec_v12_mean_lag_log,
+    command = {
+      rec_v12_add_geo |> 
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(POWER_log10_mean,
+                             POWER_log10_mean_lag_1,
+                             POWER_log10_mean_lag_2,
+                             POWER_log10_mean_lead_1,
+                             POWER_log10_mean_lead_2,
+                             new_role = "predictor")
+      
+    }
+  ),
+  
+  ####### 2. v12 - add mean, lag V_1 ----------------
+  tar_target(
+    name = rec_v12_V_1,
+    command = {
+      rec_v12_mean_lag_normal |> 
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(V_1_mean,
+                             V_1_mean_lag_1,
+                             V_1_mean_lag_2,
+                             V_1_mean_lead_1,
+                             V_1_mean_lead_2,
+                             new_role = "predictor")
+      
+    }
+  ),
+  tar_target(
+    name = rec_v12_V_1_log,
+    command = {
+      rec_v12_mean_lag_normal |> 
+        #
+        # v5 Geometric
+        #
+        recipes::update_role(V_1_log10_mean,
+                             V_1_log10_mean_lag_1,
+                             V_1_log10_mean_lag_2,
+                             V_1_log10_mean_lead_1,
+                             V_1_log10_mean_lead_2,
+                             new_role = "predictor")
+      
+    }
+  ),
+  
+  ####### 2. v12 - add mean, lag V_3~ ----------------
+  tar_target(
+    name = rec_v12_V_1_and_other,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[1,2,3,6,7]_mean$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+                             )
+    }
+  ),
+  tar_target(
+    name = rec_v12_V_1_and_other_v2,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[1,2,3,4,5,7]_mean$|V_1[1,3]_mean$"),
+                             dplyr::matches("V_[1,2,3,4,5,7]_mean_lag_[1,2]$|V_1[1,3]_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[1,2,3,4,5,7]_mean_lead_[1,2]$|V_1[1,3]_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v12_V_1_and_other_all,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[0-9]{1,2}_mean$"),
+                             dplyr::matches("V_[0-9]{1,2}_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[0-9]{1,2}_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+        )
+    }
+  ),
+  tar_target(
+    name = rec_v12_V_1_and_other_all_mean,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[0-9]{1,2}_mean$"),
+                             new_role = "predictor"
+        )
+    }
+  ),
+  
+  ####### 2. v12 - add mean, lag V_1~, not POWER ----------------
+  tar_target(
+    name = rec_v12_V_1_and_other_not_POWER,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(dplyr::matches("V_[1,2,3,6,7]_mean$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+        )
+    }
+  ),
+  
+  ##### 11 v12 spline tuning ----------------
+  tar_target(
+    name = rec_v12_final_tune_spline,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[1,2,3,6,7]_mean$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+        ) |> 
+        
+        recipes::step_spline_natural(DATE_doy, deg_free = tune())
+    }
+  ),
+  
+  tar_target(
+    name = rec_v12_final_spline_127,
+    command = {
+      rec_v12_base |> 
+        #
+        # v5 Geometric
+        #
+        recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |>
+        recipes::step_dummy(Geo_Group) |> 
+        
+        recipes::update_role(POWER_mean,
+                             POWER_mean_lag_1,
+                             POWER_mean_lag_2,
+                             POWER_mean_lead_1,
+                             POWER_mean_lead_2,
+                             dplyr::matches("V_[1,2,3,6,7]_mean$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lag_[1,2]$"),
+                             dplyr::matches("V_[1,2,3,6,7]_mean_lead_[1,2]$"),
+                             new_role = "predictor"
+        ) |> 
+        
+        recipes::step_spline_natural(DATE_doy, deg_free = 127, keep_original_cols = TRUE)
+    }
+  ),
+  
   ### 3. model ----------------
   #### 1. base ----------------
   tar_target(
@@ -1664,6 +2510,22 @@ list(
         # learn_rate = 0.1
       ) |> 
         set_engine("xgboost") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_boost_xgboost_tune_mod,
+    command = {
+      boost_tree(mode = "regression",
+                 mtry = tune(),
+                 trees = tune(),
+                 min_n = tune(),
+                 tree_depth = tune(),
+                 learn_rate = tune(), 
+                 loss_reduction = tune(),
+                 sample_size = tune()
+      ) |> 
+        set_engine("xgboost")
     }
   ),
   
@@ -1925,7 +2787,7 @@ list(
     }
   ),
   
-  ### 4. v9 -----------------------------------
+  ### 4. v9, v10 -----------------------------------
   tar_target(
     name = wkf_FE_v4,
     command = {
@@ -1942,7 +2804,15 @@ list(
           preproc = list(
             rec_v9_base = rec_v9_base,
             rec_v9_on_hot_week_month = rec_v9_on_hot_week_month,
-            rec_v9_full = rec_v9_full
+            rec_v9_full = rec_v9_full,
+            rec_v9_Geo_num = rec_v9_Geo_num,
+            rec_v9_wo_spline = rec_v9_wo_spline,
+            rec_v9_spline_54 = rec_v9_spline_54,
+            rec_v9_spline_26 = rec_v9_spline_26,
+            rec_v9_spline_120 = rec_v9_spline_120,
+            rec_v10_V_1_mean = rec_v10_V_1_mean,
+            rec_v10_V_1_mean_lag_1_2_lead_1_2 = rec_v10_V_1_mean_lag_1_2_lead_1_2,
+            rec_v11_Geo_by_POWER_stats = rec_v11_Geo_by_POWER_stats
           ),
           models = list(xgb_base = spec_xgb_feature_enginerring),
           cross = TRUE
@@ -1959,6 +2829,54 @@ list(
 
       doParallel::stopImplicitCluster()
 
+      return(list(wkf, wkf_metrics))
+    }
+  ),
+  
+  ### 5. v12 -----------------------------------
+  tar_target(
+    name = wkf_FE_v5,
+    command = {
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v12_base = rec_v12_base,
+            rec_v12_add_geo = rec_v12_add_geo,
+            rec_v12_add_dist_shanghai = rec_v12_add_dist_shanghai,
+            rec_v12_mean_lag_normal = rec_v12_mean_lag_normal,
+            rec_v12_mean_lag_log = rec_v12_mean_lag_log,
+            rec_v12_V_1 = rec_v12_V_1,
+            rec_v12_V_1_log = rec_v12_V_1_log,
+            rec_v12_V_1_and_other = rec_v12_V_1_and_other,
+            rec_v12_V_1_and_other_v2 = rec_v12_V_1_and_other_v2,
+            rec_v12_V_1_and_other_all = rec_v12_V_1_and_other_all,
+            rec_v12_V_1_and_other_all_mean = rec_v12_V_1_and_other_all_mean,
+            rec_v12_V_1_and_other_not_POWER = rec_v12_V_1_and_other_not_POWER,
+            rec_v12_final_spline_127 = rec_v12_final_spline_127
+          ),
+          models = list(xgb_base = spec_xgb_feature_enginerring),
+          cross = TRUE
+        ) |>
+        workflowsets::workflow_map(fn = "fit_resamples",verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod_v3,
+                                   metrics = yardstick::metric_set(rmse, mae, mape),
+                                   control = control_resamples(save_pred = TRUE,
+                                                               parallel_over ="resamples"))
+      
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+      
+      doParallel::stopImplicitCluster()
+      
       return(list(wkf, wkf_metrics))
     }
   ),
@@ -1984,6 +2902,7 @@ list(
   ),
   
   ### 2. tune ------------
+  #### 1. base -----------
   tar_target(
     name = wkf_set_base_tune_fit,
     command = {
@@ -2025,6 +2944,7 @@ list(
     }
   ),
   
+  #### 2. FE_tune_v1 -----------
   tar_target(
     name = wkf_FE_tune_v1,
     command = {
@@ -2075,13 +2995,13 @@ list(
                                    metrics = yardstick::metric_set(rmse),
 
                                    fn = "tune_bayes",
-                                   iter = 50,
+                                   iter = 10,
                                    objective = exp_improve(),
-                                   initial = 20,
+                                   initial = 10,
                                    control = control_bayes(verbose = TRUE,
                                                            verbose_iter = TRUE,
                                                            save_pred = TRUE,
-                                                           no_improve = 20,
+                                                           no_improve = 3,
 
                                                            allow_par = TRUE,
                                                            parallel_over = "resamples"
@@ -2093,6 +3013,134 @@ list(
 
       doParallel::stopImplicitCluster()
 
+      return(list(wkf, wkf_metrics))
+    }
+  ),
+  
+  #### 3. FE_tune_v2 -----------
+  tar_target(
+    name = wkf_FE_tune_v2,
+    command = {
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v9_spline_120 = rec_v9_spline_120
+          ),
+          models = list(xgb = spec_boost_xgboost_tune),
+          cross = TRUE
+        ) |>
+        workflowsets::option_add(id = "rec_v9_spline_120_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     mtry = finalize(
+                                       mtry(),
+                                       rec_v9_spline_120 |>
+                                         prep() |> bake(new_data = NULL)
+                                       )
+                                   )
+        ) |> 
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod_v2,
+                                   metrics = yardstick::metric_set(rmse),
+                                   
+                                   fn = "tune_bayes",
+                                   iter = 50,
+                                   objective = exp_improve(),
+                                   initial = 10,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = TRUE,
+                                                           save_pred = TRUE,
+                                                           no_improve = 20,
+                                                           
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"
+                                   ))
+      
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+      
+      doParallel::stopImplicitCluster()
+      
+      return(list(wkf, wkf_metrics))
+    }
+  ),
+  
+  #### 4. FE_tune_v3 -----------
+  tar_target(
+    name = wkf_FE_tune_v3,
+    command = {
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v12_V_1_and_other = rec_v12_V_1_and_other,
+            rec_v12_final_spline_127  =rec_v12_final_spline_127
+          ),
+          models = list(xgb = spec_boost_xgboost_tune),
+          cross = TRUE
+        ) |>
+        workflowsets::option_add(id = "rec_v12_V_1_and_other_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     mtry = finalize(
+                                       mtry(),
+                                       rec_v12_V_1_and_other |>
+                                         prep() |> bake(new_data = NULL)
+                                     )
+                                   )
+        ) |> 
+        workflowsets::option_add(id = "rec_v12_final_spline_127_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     mtry = finalize(
+                                       mtry(),
+                                       rec_v12_final_spline_127 |>
+                                         prep() |> bake(new_data = NULL)
+                                     )
+                                   )
+        ) |> 
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod_v3,
+                                   metrics = yardstick::metric_set(rmse),
+                                   
+                                   fn = "tune_bayes",
+                                   iter = 50,
+                                   objective = exp_improve(),
+                                   initial = 10,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = TRUE,
+                                                           save_pred = TRUE,
+                                                           no_improve = 20,
+                                                           
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"
+                                   ))
+      
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+      
+      doParallel::stopImplicitCluster()
+      
       return(list(wkf, wkf_metrics))
     }
   ),
@@ -2108,6 +3156,91 @@ list(
             select_best()
         ) |> 
         last_fit(df_split)
+    }
+  ),
+  
+  ### 4. Spline degree ---------------
+  tar_target(
+    name = param_degree_rec_v12_final_tune_spline,
+    command = {
+      rec_v12_final_tune_spline |> 
+        extract_parameter_set_dials() |> 
+        update(deg_free = deg_free(range = c(1, 360)))
+    }
+  ),
+  tar_target(
+    name = grid_param_degree_rec_v12_final_tune_spline,
+    command = {
+      param_degree_rec_v12_final_tune_spline |> 
+        grid_regular(levels = 120)
+    }
+  ),
+  tar_target(
+    name = tune_param_degree_rec_v12,
+    command = {
+      all_cores <- parallel::detectCores(logical = FALSE) - 2 
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      workflow() |> 
+        add_recipe(recipe = rec_v12_final_tune_spline) |> 
+        add_model(spec = spec_xgb_feature_enginerring) |> 
+        tune_grid(
+          resamples = df_kvf_mod_v3,
+          param_info = param_degree_rec_v12_final_tune_spline,
+          grid = grid_param_degree_rec_v12_final_tune_spline,
+          metrics = metric_set(rmse, mae, mpe, mape),
+          control = control_grid(
+            verbose = TRUE,
+            allow_par = TRUE,
+            save_pred = TRUE,
+            parallel_over = "everything"
+          )
+        )
+    }
+  ),
+  
+  tar_target(
+    name = param_degree_rec_v12_final_tune_spline_v2,
+    command = {
+      rec_v12_final_tune_spline |> 
+        extract_parameter_set_dials() |> 
+        update(deg_free = deg_free(range = c(90, 170)))
+    }
+  ),
+  tar_target(
+    name = grid_param_degree_rec_v12_final_tune_spline_v2,
+    command = {
+      param_degree_rec_v12_final_tune_spline_v2 |> 
+        grid_regular(levels = 80)
+    }
+  ),
+  tar_target(
+    name = tune_param_degree_rec_v12_v2,
+    command = {
+      all_cores <- 10 
+      
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+      
+      workflow() |> 
+        add_recipe(recipe = rec_v12_final_tune_spline) |> 
+        add_model(spec = spec_xgb_feature_enginerring) |> 
+        tune_grid(
+          resamples = df_kvf_mod_v3,
+          param_info = param_degree_rec_v12_final_tune_spline_v2,
+          grid = grid_param_degree_rec_v12_final_tune_spline_v2,
+          metrics = metric_set(rmse, mae, mpe, mape),
+          control = control_grid(
+            verbose = TRUE,
+            allow_par = TRUE,
+            save_pred = TRUE,
+            parallel_over = "resamples"
+          )
+        )
     }
   ),
   
@@ -2128,7 +3261,7 @@ list(
     }
   ),
   
-  ### 1. v1 rec_v7_v8_xgb --------------
+  ### 2. v1 rec_v7_v8_xgb --------------
   tar_target(
     name = wkf_final_v1_validate_and_prediction_rec_v7_v8_xgb,
     command = {
@@ -2138,6 +3271,38 @@ list(
         obj_split = df_split_mod,
         obj_train = df_train_mod,
         obj_test = df_test_mod,
+        obj_submit = df_submit,
+        param_prefix = "v1"
+      )
+    }
+  ),
+  
+  ### 2. v2 rec_v9_spline_120 --------------
+  tar_target(
+    name = wkf_final_v2_validate_and_prediction_rec_v9_spline_120,
+    command = {
+      make_fit_wkflow_validate_and_prediction(
+        obj_wkf = wkf_FE_tune_v2,
+        param_id = "rec_v9_spline_120_xgb",
+        obj_split = df_split_mod_v2,
+        obj_train = df_train_mod_v2,
+        obj_test = df_test_mod_v2,
+        obj_submit = df_submit,
+        param_prefix = "v1"
+      )
+    }
+  ),
+  
+  ### 3. v2 rec_v12 --------------
+  tar_target(
+    name = wkf_final_v3_validate_and_prediction_rec_v12_V_1_and_other_xgb,
+    command = {
+      make_fit_wkflow_validate_and_prediction(
+        obj_wkf = wkf_FE_tune_v3,
+        param_id = "rec_v12_V_1_and_other_xgb",
+        obj_split = df_split_mod_v3,
+        obj_train = df_train_mod_v3,
+        obj_test = df_test_mod_v3,
         obj_submit = df_submit,
         param_prefix = "v1"
       )

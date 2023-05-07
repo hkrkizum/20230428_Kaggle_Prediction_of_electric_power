@@ -1106,7 +1106,180 @@ df_train |>
   dplyr::slice(1,2, 360:364) |> View()
 
 
+wkf_FE_v4[[1]] |> 
+  extract_preprocessor(id = "rec_v9_full_xgb_base") |> 
+  prep() |> summary() |> 
+  print(n = 200)
 
+g1 <- 
+  df_model_train_mod_v3 |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_point(alpha = 0.4)
+
+g2 <- 
+  df_model_test_mod_v3 |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_point(alpha = 0.4)
+
+g3 <- 
+  df_model_train_mod_v2 |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_point(alpha = 0.4)
+
+g4 <- 
+  df_model_test_mod_v2 |> 
+  ggplot(aes(x = DATE, y = POWER)) +
+  geom_point(alpha = 0.4)
+
+
+(g1 + g2) / (g3 + g4)
+
+g1 <- 
+  df_model_train_mod_v3 |> 
+  ggplot(aes(x = POWER)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g2 <- 
+  df_model_test_mod_v3 |> 
+  ggplot(aes(x = POWER)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g3 <- 
+  df_model_train_mod_v2 |> 
+  ggplot(aes(x = POWER)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g4 <- 
+  df_model_test_mod_v2 |> 
+  ggplot(aes(x = POWER)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+
+(g1 + g2) / (g3 + g4)
+
+g1 <- 
+  df_model_train_mod_v3 |> 
+  ggplot(aes(x = DATE)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g2 <- 
+  df_model_test_mod_v3 |> 
+  ggplot(aes(x = DATE)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g3 <- 
+  df_model_train_mod_v2 |> 
+  ggplot(aes(x = DATE)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+g4 <- 
+  df_model_test_mod_v2 |> 
+  ggplot(aes(x = DATE)) +
+  geom_histogram(aes(y=after_stat(density)), 
+                 position = "identity") +
+  geom_density()
+
+
+(g1 + g2) / (g3 + g4)
+
+
+df_train_mod_v3 |> 
+  # 
+  # base
+  #
+  recipes::recipe(POWER ~ .) |> 
+  recipes::update_role(ID, new_role = "id variable") |> 
+  recipes::update_role(SOT, new_role = "id variable") |> 
+  
+  #
+  # exclude mean and lag feature
+  #
+  recipes::update_role(
+    dplyr::matches("_mean_lag_[0-9]$|_mean_lead_[0-9]$|_mean$"), new_role = "non-use variable"
+  ) |> 
+  
+  #
+  # exclude dist from shanghai
+  #
+  recipes::update_role(
+    dplyr::matches("dist_shanghai"), new_role = "non-use variable"
+  ) |>
+  
+  #
+  # v5 Geometric
+  #
+  recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
+  recipes::step_dummy(Geo_Group) |> 
+  # recipes::update_role(
+  #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+  # ) |> 
+  
+  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
+  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
+  
+  #
+  # v7 Weekday, season
+  #
+  recipes::step_mutate(iswweekday = dplyr::if_else(
+    DATE_dow %in% c("Sun", "Sat"),
+    0, 1)) |>
+  
+  recipes::step_mutate(spring = dplyr::if_else(DATE_month %in% c("Mar","Apr","May"), 1, 0)) |>
+  recipes::step_mutate(summer = dplyr::if_else(DATE_month %in% c("Jun","Jul","Aug"), 1, 0)) |>
+  recipes::step_mutate(fall = dplyr::if_else(DATE_month %in% c("Sep","Oct","Nov"), 1, 0)) |>
+  recipes::step_mutate(winter = dplyr::if_else(DATE_month %in% c("Dec","Jan","Feb"), 1, 0)) |>
+  
+  recipes::step_dummy(DATE_month, DATE_dow)
+
+
+rec_v12_base |> 
+  recipes::update_role(
+    dplyr::matches("Geo_Group_"), new_role = "non-use variable"
+  )
+
+tmp <- 
+  wkf_FE_v5[[1]] |> 
+  extract_workflow(id = "rec_v12_V_1_and_other_xgb_base") |> 
+  last_fit(df_split_mod_v3)
+
+tmp2 <-
+  tmp |> 
+  extract_fit_parsnip()
+
+tmp2$fit
+
+tmp2$fit |> 
+  xgboost::xgb.importance(model = _) |> 
+  xgboost::xgb.ggplot.importance()
+
+res <- 
+  df_train_mod_v3 |> 
+  dplyr::mutate(across(.cols = where(is.numeric), .fns = function(x){unlist(scale(x))})) |> 
+  dplyr::filter(!duplicated(DATE)) |> 
+  dplyr::select(DATE, dplyr::matches("^POWER_mean$|V_[0-9]{1,2}_mean$")) |> 
+  correlation::correlation()
+  
+res |> 
+  summary() |> 
+  plot()
+  
+  # ggplot(aes(x = DATE, y = POWER_mean)) +
+  # geom_line() +
+  # geom_line(aes(x = DATE, y = V_1_mean), colour = "red")
 
 # Plot screening ------------
 tar_load(wkf_FE_v3)
@@ -1122,3 +1295,30 @@ wkf_FE_v4[[1]] |>
   geom_text(aes(label = wflow_id), nudge_x = 0.5) +
   coord_flip() +
   facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
+
+
+tar_load(wkf_FE_v5)
+wkf_FE_v5[[1]] |> 
+  autoplot(metric = "rmse") +
+  geom_text(aes(label = wflow_id), nudge_x = 0.5) +
+  coord_flip() +
+  facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
+
+wkf_FE_v5[[1]] |> 
+  extract_preprocessor(id = "rec_v12_V_1_and_other_xgb_base") |> 
+  prep() |> summary() |> print(n = 1000)
+
+tmp <- 
+  wkf_FE_v5[[1]] |> 
+  extract_workflow(id = "rec_v12_base_xgb_base") |> 
+  last_fit(df_split_mod_v3)
+
+tmp2 <-
+  tmp |> 
+  extract_fit_parsnip()
+
+tmp2$fit
+
+tmp2$fit |> 
+  xgboost::xgb.importance(model = _) |> 
+  xgboost::xgb.ggplot.importance()
