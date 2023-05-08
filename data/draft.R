@@ -1304,21 +1304,50 @@ wkf_FE_v5[[1]] |>
   coord_flip() +
   facet_wrap(.metric ~ ., scales = "free_x", ncol = 1)
 
+
+tmp |> 
+  dplyr::mutate(cos = cos(DATE_doy * pi * 6 / 365)) |> 
+  ggplot(aes(x  = DATE_doy, y = cos)) + 
+  geom_line()
+
+# wkf_FE_v5[[1]] |> 
+#   extract_preprocessor(id = "rec_v12_V_1_and_other_xgb_base") |> 
+#   prep() |> summary() |> print(n = 1000)
+# 
+# tmp <- 
+#   wkf_FE_v5[[1]] |> 
+#   extract_workflow(id = "rec_v12_base_xgb_base") |> 
+#   last_fit(df_split_mod_v3)
+# 
+# tmp2 <-
+#   tmp |> 
+#   extract_fit_parsnip()
+# 
+# tmp2$fit
+# 
+# tmp2$fit |> 
+#   xgboost::xgb.importance(model = _) |> 
+#   xgboost::xgb.ggplot.importance()
+
+g <- 
+  rec_v13_sincos |> 
+  prep() |> 
+  bake(new_data = NULL, all_predictors(), all_outcomes()) |>
+  correlation() |> summary() |> plot()
+
+g_mod <- g
+
+g_mod$layers[[2]] <- NULL
+
+g_mod
+
+
 wkf_FE_v5[[1]] |> 
-  extract_preprocessor(id = "rec_v12_V_1_and_other_xgb_base") |> 
-  prep() |> summary() |> print(n = 1000)
+  extract_workflow_set_result(id = "rec_v12_V_1_and_other_xgb_base") |> 
+  collect_predictions() |> 
+  # dplyr::mutate(POWER = 10^(POWER - 1)) |> 
+  # dplyr::mutate(.pred = 10^(.pred - 1)) |> 
+  ggplot(aes(x = POWER, y = .pred)) +
+  geom_point() +
+  geom_abline(slope = 1)
 
-tmp <- 
-  wkf_FE_v5[[1]] |> 
-  extract_workflow(id = "rec_v12_base_xgb_base") |> 
-  last_fit(df_split_mod_v3)
-
-tmp2 <-
-  tmp |> 
-  extract_fit_parsnip()
-
-tmp2$fit
-
-tmp2$fit |> 
-  xgboost::xgb.importance(model = _) |> 
-  xgboost::xgb.ggplot.importance()

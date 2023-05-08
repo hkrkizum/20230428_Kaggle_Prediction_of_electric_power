@@ -2366,6 +2366,62 @@ list(
     }
   ),
   
+  ##### 12 v13 sin cos ----------------
+  tar_target(
+    name = rec_v13_sincos,
+    command = {
+      rec_v12_V_1_and_other |> 
+        
+        recipes::step_mutate(sin = sin(2 * pi * DATE_doy /365)) |> 
+        recipes::step_mutate(cos = cos(2 * pi * DATE_doy /365))
+        
+    }
+  ),
+  
+  tar_target(
+    name = rec_v13_sincos_3,
+    command = {
+      rec_v12_V_1_and_other |> 
+        
+        recipes::step_mutate(sin = sin(6 * pi * DATE_doy /365)) |> 
+        recipes::step_mutate(cos = cos(6 * pi * DATE_doy /365))
+      
+    }
+  ),
+  
+  ##### 13 v13 outlier ----------------
+  tar_target(
+    name = rec_v13_out_V_6,
+    command = {
+      rec_v12_V_1_and_other |> 
+        
+        recipes::step_filter(V_6 > 70)
+      
+    }
+  ),
+  
+  ##### 13 v14 log trans ----------------
+  tar_target(
+    name = rec_v14_log10,
+    command = {
+      rec_v12_V_1_and_other |> 
+        recipes::step_log(base = 10, offset = 1, all_outcomes())
+    }
+  ),
+  
+  tar_target(
+    name = rec_v14_scale,
+    command = {
+      rec_v12_V_1_and_other |> 
+        
+        recipes::step_mutate(sin = sin(2 * pi * DATE_doy /365)) |> 
+        recipes::step_mutate(cos = cos(2 * pi * DATE_doy /365)) |> 
+        
+        recipes::step_normalize(dplyr::matches("POWER_mean"),
+                                dplyr::matches("^V_[0-9]{1,2}"))
+    }
+  ),
+  
   ### 3. model ----------------
   #### 1. base ----------------
   tar_target(
@@ -2860,7 +2916,12 @@ list(
             rec_v12_V_1_and_other_all = rec_v12_V_1_and_other_all,
             rec_v12_V_1_and_other_all_mean = rec_v12_V_1_and_other_all_mean,
             rec_v12_V_1_and_other_not_POWER = rec_v12_V_1_and_other_not_POWER,
-            rec_v12_final_spline_127 = rec_v12_final_spline_127
+            rec_v12_final_spline_127 = rec_v12_final_spline_127,
+            rec_v13_sincos  = rec_v13_sincos,
+            rec_v13_sincos_3 = rec_v13_sincos_3,
+            rec_v13_out_V_6 = rec_v13_out_V_6,
+            # rec_v14_log10 = rec_v14_log10,
+            rec_v14_scale = rec_v14_scale
           ),
           models = list(xgb_base = spec_xgb_feature_enginerring),
           cross = TRUE
@@ -3144,6 +3205,76 @@ list(
       return(list(wkf, wkf_metrics))
     }
   ),
+  
+  #### 5. FE_tune_v4 -----------
+  tar_target(
+    name = wkf_FE_tune_v4,
+    command = {
+      # all_cores <- parallel::detectCores(logical = FALSE)
+      all_cores <- 10
+
+      library(doParallel)
+      cl <- makePSOCKcluster(all_cores)
+      registerDoParallel(cl)
+
+
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v13_sincos = rec_v13_sincos,
+            rec_v14_scale  = rec_v14_scale
+          ),
+          models = list(xgb = spec_boost_xgboost_tune),
+          cross = TRUE
+        ) |>
+        workflowsets::option_add(id = "rec_v13_sincos_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     mtry = finalize(
+                                       mtry(),
+                                       rec_v13_sincos |>
+                                         prep() |> bake(new_data = NULL)
+                                     )
+                                   )
+        ) |>
+        workflowsets::option_add(id = "rec_v14_scale_xgb",
+                                 param_info = spec_boost_xgboost_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     mtry = finalize(
+                                       mtry(),
+                                       rec_v14_scale |>
+                                         prep() |> bake(new_data = NULL)
+                                     )
+                                   )
+        ) |>
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod_v3,
+                                   metrics = yardstick::metric_set(rmse),
+
+                                   fn = "tune_bayes",
+                                   iter = 50,
+                                   objective = exp_improve(),
+                                   initial = 10,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = TRUE,
+                                                           save_pred = TRUE,
+                                                           no_improve = 20,
+
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"
+                                   ))
+
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+
+      doParallel::stopImplicitCluster()
+
+      return(list(wkf, wkf_metrics))
+    }
+  ),
   ### 3. metrics ---------------
   tar_target(
     name = base_xgb_prediction,
@@ -3300,6 +3431,51 @@ list(
       make_fit_wkflow_validate_and_prediction(
         obj_wkf = wkf_FE_tune_v3,
         param_id = "rec_v12_V_1_and_other_xgb",
+        obj_split = df_split_mod_v3,
+        obj_train = df_train_mod_v3,
+        obj_test = df_test_mod_v3,
+        obj_submit = df_submit,
+        param_prefix = "v1"
+      )
+    }
+  ),
+  ### 3. v2 rec_v12 --------------
+  tar_target(
+    name = wkf_final_v3_validate_and_prediction_rec_v12_final_spline_127_xgb,
+    command = {
+      make_fit_wkflow_validate_and_prediction(
+        obj_wkf = wkf_FE_tune_v3,
+        param_id = "rec_v12_final_spline_127_xgb",
+        obj_split = df_split_mod_v3,
+        obj_train = df_train_mod_v3,
+        obj_test = df_test_mod_v3,
+        obj_submit = df_submit,
+        param_prefix = "v1"
+      )
+    }
+  ),
+  ### 3. v2 rec_v14 --------------
+  tar_target(
+    name = wkf_final_v4_validate_and_prediction_rec_v13_sincos_xgb,
+    command = {
+      make_fit_wkflow_validate_and_prediction(
+        obj_wkf = wkf_FE_tune_v4,
+        param_id = "rec_v13_sincos_xgb",
+        obj_split = df_split_mod_v3,
+        obj_train = df_train_mod_v3,
+        obj_test = df_test_mod_v3,
+        obj_submit = df_submit,
+        param_prefix = "v1"
+      )
+    }
+  ),
+  ### 3. v2 rec_v14 --------------
+  tar_target(
+    name = wkf_final_v4_validate_and_prediction_rec_v14_scale_xgb,
+    command = {
+      make_fit_wkflow_validate_and_prediction(
+        obj_wkf = wkf_FE_tune_v4,
+        param_id = "rec_v14_scale_xgb",
         obj_split = df_split_mod_v3,
         obj_train = df_train_mod_v3,
         obj_test = df_test_mod_v3,
