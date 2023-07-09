@@ -33,6 +33,9 @@ tar_option_set(
                
                "torch",
                "tabnet",
+               
+               # "treesnip",
+               # "catboost",
 
                "correlation",
                "see",
@@ -2400,7 +2403,7 @@ list(
     }
   ),
   
-  ##### 13 v14 log trans ----------------
+  ##### 14 v14 log trans ----------------
   tar_target(
     name = rec_v14_log10,
     command = {
@@ -2419,6 +2422,62 @@ list(
         
         recipes::step_normalize(dplyr::matches("POWER_mean"),
                                 dplyr::matches("^V_[0-9]{1,2}"))
+    }
+  ),
+  
+  ##### 15 v15 ----------------
+  tar_target(
+    name = rec_v15_add_combine,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_mutate(V_1_square = V_1^2) |> 
+        recipes::step_mutate(V_1_inv = 1/(V_1 + 10^-3)) |> 
+        
+        recipes::step_mutate(V_1_2_6 = V_1 + V_2 + V_6) |> 
+        recipes::step_mutate(V_3_4_5 = V_3 + V_4 + V_5)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v15_add_combine_V1,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_mutate(V_1_square = V_1^2) |> 
+        recipes::step_mutate(V_1_inv = 1/(V_1 + 10^-3))
+    }
+  ),
+  
+  tar_target(
+    name = rec_v15_add_combine_V1_sq,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_mutate(V_1_square = V_1^2) |> 
+        recipes::step_normalize(V_1_square)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v15_remove_corrr,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_corr(threshold = 0.9, method = "spearman",
+                           all_predictors())
+    }
+  ),
+  
+  tar_target(
+    name = rec_v15_spline,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_spline_natural(DATE_doy, deg_free = 127)
+    }
+  ),
+  
+  tar_target(
+    name = rec_v15_spline_60,
+    command = {
+      rec_v14_scale |> 
+        recipes::step_spline_natural(DATE_doy, deg_free = 60)
     }
   ),
   
@@ -2566,6 +2625,38 @@ list(
         # learn_rate = 0.1
       ) |> 
         set_engine("xgboost") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_keras_tune,
+    command = {
+      mlp(
+        epochs = 20,
+        hidden_units = tune(),
+        # penalty = tune(),
+        dropout = tune(),
+        activation = tune()
+      ) |> 
+        set_mode("regression") |> 
+        set_engine("keras") 
+    }
+  ),
+  
+  tar_target(
+    name = spec_tabnet_tune,
+    command = {
+      tabnet(
+        epochs = tune(), 
+        penalty = tune(),
+        batch_size = tune(), 
+        decision_width = tune(), 
+        attention_width =tune(),
+        num_steps = tune(),
+        learn_rate = 0.08,
+        momentum = 0.6) |> 
+        set_mode("regression") |> 
+        set_engine("torch", verbose = TRUE)
     }
   ),
   
@@ -2921,7 +3012,13 @@ list(
             rec_v13_sincos_3 = rec_v13_sincos_3,
             rec_v13_out_V_6 = rec_v13_out_V_6,
             # rec_v14_log10 = rec_v14_log10,
-            rec_v14_scale = rec_v14_scale
+            rec_v14_scale = rec_v14_scale,
+            rec_v15_add_combine = rec_v15_add_combine,
+            rec_v15_add_combine_V1 = rec_v15_add_combine_V1,
+            rec_v15_add_combine_V1_sq = rec_v15_add_combine_V1_sq,
+            rec_v15_remove_corrr = rec_v15_remove_corrr,
+            rec_v15_spline = rec_v15_spline,
+            rec_v15_spline_60 = rec_v15_spline_60
           ),
           models = list(xgb_base = spec_xgb_feature_enginerring),
           cross = TRUE
@@ -3275,6 +3372,64 @@ list(
       return(list(wkf, wkf_metrics))
     }
   ),
+  
+  #### 6. FE_tune_v5 -----------
+  # tar_target(
+  #   name = wkf_FE_tune_v5,
+  #   command = {
+  #     # all_cores <- parallel::detectCores(logical = FALSE)
+  #     all_cores <- 10
+  #     
+  #     library(doParallel)
+  #     cl <- makePSOCKcluster(all_cores)
+  #     registerDoParallel(cl)
+  #     
+  #     
+  #     wkf <-
+  #       workflowsets::workflow_set(
+  #         preproc = list(
+  #           rec_v15_spline = rec_v15_spline
+  #         ),
+  #         models = list(xgb = spec_boost_xgboost_tune),
+  #         cross = TRUE
+  #       ) |>
+  #       workflowsets::option_add(id = "rec_v15_spline_xgb",
+  #                                param_info = spec_boost_xgboost_tune |>
+  #                                  hardhat::extract_parameter_set_dials() |>
+  #                                  update(
+  #                                    mtry = finalize(
+  #                                      mtry(),
+  #                                      rec_v15_spline |>
+  #                                        prep() |> bake(new_data = NULL)
+  #                                    )
+  #                                  )
+  #       ) |>
+  #       workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+  #                                  resamples = df_kvf_mod_v3,
+  #                                  metrics = yardstick::metric_set(rmse),
+  #                                  
+  #                                  fn = "tune_bayes",
+  #                                  iter = 50,
+  #                                  objective = exp_improve(),
+  #                                  initial = 10,
+  #                                  control = control_bayes(verbose = TRUE,
+  #                                                          verbose_iter = TRUE,
+  #                                                          save_pred = TRUE,
+  #                                                          no_improve = 20,
+  #                                                          
+  #                                                          allow_par = TRUE,
+  #                                                          parallel_over = "resamples"
+  #                                  ))
+  #     
+  #     wkf_metrics <-
+  #       wkf |>
+  #       collect_metrics()
+  #     
+  #     doParallel::stopImplicitCluster()
+  #     
+  #     return(list(wkf, wkf_metrics))
+  #   }
+  # ),
   ### 3. metrics ---------------
   tar_target(
     name = base_xgb_prediction,
@@ -3374,6 +3529,92 @@ list(
         )
     }
   ),
+  
+  ### 5. Keras ---------------
+  tar_target(
+    name = wkf_FE_tune_keras_v1,
+    command = {
+      wkf <-
+        workflowsets::workflow_set(
+          preproc = list(
+            rec_v14_scale  = rec_v14_scale
+          ),
+          models = list(keras = spec_keras_tune),
+          cross = TRUE
+        ) |>
+        workflowsets::option_add(id = "rec_v14_scale_keras",
+                                 param_info = spec_keras_tune |>
+                                   hardhat::extract_parameter_set_dials() |>
+                                   update(
+                                     activation = finalize(
+                                       dials::value_set(activation(), c("relu", "softmax"))
+                                     )
+                                   )
+                                 ) |>
+        workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                                   resamples = df_kvf_mod_v3,
+                                   metrics = yardstick::metric_set(rmse),
+
+                                   fn = "tune_bayes",
+                                   iter = 50,
+                                   objective = exp_improve(),
+                                   initial = 10,
+                                   control = control_bayes(verbose = TRUE,
+                                                           verbose_iter = FALSE,
+                                                           save_pred = TRUE,
+                                                           no_improve = 10,
+
+                                                           allow_par = TRUE,
+                                                           parallel_over = "resamples"
+                                   ))
+
+      wkf_metrics <-
+        wkf |>
+        collect_metrics()
+
+      return(list(wkf, wkf_metrics))
+    }
+  ),
+  
+  tar_target(
+    name = wkf_FE_tune_keras_v1_best_params,
+    command = {
+      wkf_FE_tune_keras_v1[[1]] |> 
+        extract_workflow(id = "rec_v14_scale_keras") |> 
+        workflows::update_model(
+          mlp(
+            epochs = 100,
+            hidden_units = tune(),
+            # penalty = tune(),
+            dropout = tune(),
+            activation = tune()
+          ) |> 
+            set_mode("regression") |> 
+            set_engine("keras") 
+        ) |> 
+        finalize_workflow(
+          wkf_FE_tune_keras_v1[[1]] |> 
+            extract_workflow_set_result(id = "rec_v14_scale_keras") |> 
+            select_best()
+        ) |> 
+        last_fit(df_split_mod_v3)
+    }
+  ),
+  
+  ### 6. tabnet ---------------------------
+  tar_target(
+    name = wkf_FE_tune_tabnet_v1,
+    command = {
+      wkf <-
+        workflows::workflow() |> 
+        add_recipe(rec_v14_scale) |> 
+        add_model(spec_tabnet_tune) 
+
+      
+      return(list(wkf))
+    }
+  ),
+  
   
   ## 7. Submission -------------------
   ### 1. v1 v5_mod --------------

@@ -1197,53 +1197,40 @@ g4 <-
 (g1 + g2) / (g3 + g4)
 
 
-df_train_mod_v3 |> 
-  # 
-  # base
-  #
-  recipes::recipe(POWER ~ .) |> 
-  recipes::update_role(ID, new_role = "id variable") |> 
-  recipes::update_role(SOT, new_role = "id variable") |> 
-  
-  #
-  # exclude mean and lag feature
-  #
-  recipes::update_role(
-    dplyr::matches("_mean_lag_[0-9]$|_mean_lead_[0-9]$|_mean$"), new_role = "non-use variable"
-  ) |> 
-  
-  #
-  # exclude dist from shanghai
-  #
-  recipes::update_role(
-    dplyr::matches("dist_shanghai"), new_role = "non-use variable"
+wkf <-
+  workflowsets::workflow_set(
+    preproc = list(
+      rec_v14_scale  = rec_v14_scale
+    ),
+    models = list(keras = spec_keras_tune),
+    cross = TRUE
   ) |>
-  
-  #
-  # v5 Geometric
-  #
-  recipes::step_mutate(Geo_Group = forcats::fct_relevel(as.character(Geo_Group), sort)) |> 
-  recipes::step_dummy(Geo_Group) |> 
-  # recipes::update_role(
-  #   dplyr::matches("Geo_Group_"), new_role = "non-use variable"
-  # ) |> 
-  
-  recipes::step_mutate(DATE = lubridate::ymd(DATE, tz = "Asia/Tokyo")) |> 
-  recipes::step_date(DATE, features = c("month", "week", "dow", "doy"), keep_original_cols = FALSE) |> 
-  
-  #
-  # v7 Weekday, season
-  #
-  recipes::step_mutate(iswweekday = dplyr::if_else(
-    DATE_dow %in% c("Sun", "Sat"),
-    0, 1)) |>
-  
-  recipes::step_mutate(spring = dplyr::if_else(DATE_month %in% c("Mar","Apr","May"), 1, 0)) |>
-  recipes::step_mutate(summer = dplyr::if_else(DATE_month %in% c("Jun","Jul","Aug"), 1, 0)) |>
-  recipes::step_mutate(fall = dplyr::if_else(DATE_month %in% c("Sep","Oct","Nov"), 1, 0)) |>
-  recipes::step_mutate(winter = dplyr::if_else(DATE_month %in% c("Dec","Jan","Feb"), 1, 0)) |>
-  
-  recipes::step_dummy(DATE_month, DATE_dow)
+  workflowsets::option_add(id = "rec_v14_scale_keras",
+                           param_info = spec_keras_tune |>
+                             hardhat::extract_parameter_set_dials() |>
+                             update(
+                               activation = finalize(
+                                 activation(),
+                                 c("relu", "softmax")
+                               )
+                             )
+  ) |>
+  workflowsets::workflow_map(verbose = TRUE,seed = 54147,
+                             resamples = df_kvf_mod_v3,
+                             metrics = yardstick::metric_set(rmse),
+                             
+                             fn = "tune_bayes",
+                             iter = 50,
+                             objective = exp_improve(),
+                             initial = 10,
+                             control = control_bayes(verbose = TRUE,
+                                                     verbose_iter = TRUE,
+                                                     save_pred = TRUE,
+                                                     no_improve = 20,
+                                                     
+                                                     allow_par = TRUE,
+                                                     parallel_over = "resamples"
+                             ))
 
 
 rec_v12_base |> 
@@ -1280,6 +1267,29 @@ res |>
   # ggplot(aes(x = DATE, y = POWER_mean)) +
   # geom_line() +
   # geom_line(aes(x = DATE, y = V_1_mean), colour = "red")
+
+
+res <- 
+  wkf_FE_tune_keras_v1[[1]] |> 
+  extract_workflow(id = "rec_v14_scale_keras") |> 
+  workflows::update_model(
+    mlp(
+      epochs = 100,
+      hidden_units = tune(),
+      # penalty = tune(),
+      dropout = tune(),
+      activation = tune()
+    ) |> 
+      set_mode("regression") |> 
+      set_engine("keras") 
+  ) |> 
+  finalize_workflow(
+    wkf_FE_tune_keras_v1[[1]] |> 
+      extract_workflow_set_result(id = "rec_v14_scale_keras") |> 
+      select_best()
+  )
+
+res
 
 # Plot screening ------------
 tar_load(wkf_FE_v3)

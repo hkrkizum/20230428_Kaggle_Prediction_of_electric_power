@@ -1,0 +1,64 @@
+---
+title: "Tuned Model"
+format: 
+  html:
+    toc: true
+    toc-depth: 5
+    number-sections: true
+execute: 
+    fig-width: 9
+---
+
+## Import target
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(targets)
+library(patchwork)
+library(gt)
+
+tar_load_globals()
+
+tar_load(
+  c(
+    wkf_FE_tune_v1,
+    wkf_FE_tune_v2,
+    wkf_FE_tune_v3,
+    wkf_FE_tune_v4,
+    wkf_final_v1_validate_and_prediction_rec_v7_v8_xgb,
+    wkf_final_v2_validate_and_prediction_rec_v9_spline_120,
+    wkf_final_v3_validate_and_prediction_rec_v12_V_1_and_other_xgb,
+    wkf_final_v3_validate_and_prediction_rec_v12_final_spline_127_xgb,
+    wkf_final_v4_validate_and_prediction_rec_v13_sincos_xgb,
+    wkf_final_v4_validate_and_prediction_rec_v14_scale_xgb
+  )
+)
+```
+
+## 比較
+
+### CV
+
+```{r}
+list(
+  wkf_FE_tune_v1,
+  wkf_FE_tune_v2,
+  wkf_FE_tune_v3,
+  wkf_FE_tune_v4
+) %>% 
+  purrr::walk(.f = function(obj){print(obj[[1]] |> collect_metrics())})
+```
+
+### バリデーション
+
+```{r}
+list(
+  wkf_final_v1_validate_and_prediction_rec_v7_v8_xgb,
+  wkf_final_v2_validate_and_prediction_rec_v9_spline_120,
+  wkf_final_v3_validate_and_prediction_rec_v12_V_1_and_other_xgb,
+  wkf_final_v3_validate_and_prediction_rec_v12_final_spline_127_xgb,
+  wkf_final_v4_validate_and_prediction_rec_v13_sincos_xgb,
+  wkf_final_v4_validate_and_prediction_rec_v14_scale_xgb
+) %>% 
+  purrr::walk(.f = function(obj){print(obj[[1]] |> collect_metrics())})
+```
+
